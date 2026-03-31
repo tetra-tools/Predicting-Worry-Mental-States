@@ -1,0 +1,607 @@
+[
+    {
+        "label": "TimeSeriesDataset",
+        "importPath": "datasets.TimeSeriesDataset",
+        "description": "datasets.TimeSeriesDataset",
+        "isExtraImport": true,
+        "detail": "datasets.TimeSeriesDataset",
+        "documentation": {}
+    },
+    {
+        "label": "pytorch_lightning",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "pytorch_lightning",
+        "description": "pytorch_lightning",
+        "detail": "pytorch_lightning",
+        "documentation": {}
+    },
+    {
+        "label": "DataLoader",
+        "importPath": "torch.utils.data",
+        "description": "torch.utils.data",
+        "isExtraImport": true,
+        "detail": "torch.utils.data",
+        "documentation": {}
+    },
+    {
+        "label": "Dataset",
+        "importPath": "torch.utils.data",
+        "description": "torch.utils.data",
+        "isExtraImport": true,
+        "detail": "torch.utils.data",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Tuple",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Tuple",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Tuple",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Any",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "torch",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "torch",
+        "description": "torch",
+        "detail": "torch",
+        "documentation": {}
+    },
+    {
+        "label": "numpy",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "numpy",
+        "description": "numpy",
+        "detail": "numpy",
+        "documentation": {}
+    },
+    {
+        "label": "math",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "math",
+        "description": "math",
+        "detail": "math",
+        "documentation": {}
+    },
+    {
+        "label": "re",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "re",
+        "description": "re",
+        "detail": "re",
+        "documentation": {}
+    },
+    {
+        "label": "scipy",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "scipy",
+        "description": "scipy",
+        "detail": "scipy",
+        "documentation": {}
+    },
+    {
+        "label": "pandas",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "pandas",
+        "description": "pandas",
+        "detail": "pandas",
+        "documentation": {}
+    },
+    {
+        "label": "os",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "os",
+        "description": "os",
+        "detail": "os",
+        "documentation": {}
+    },
+    {
+        "label": "glob",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "glob",
+        "description": "glob",
+        "detail": "glob",
+        "documentation": {}
+    },
+    {
+        "label": "tqdm",
+        "importPath": "tqdm",
+        "description": "tqdm",
+        "isExtraImport": true,
+        "detail": "tqdm",
+        "documentation": {}
+    },
+    {
+        "label": "torch.nn",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "torch.nn",
+        "description": "torch.nn",
+        "detail": "torch.nn",
+        "documentation": {}
+    },
+    {
+        "label": "ReduceLROnPlateau",
+        "importPath": "torch.optim.lr_scheduler",
+        "description": "torch.optim.lr_scheduler",
+        "isExtraImport": true,
+        "detail": "torch.optim.lr_scheduler",
+        "documentation": {}
+    },
+    {
+        "label": "CosineAnnealingWarmRestarts",
+        "importPath": "torch.optim.lr_scheduler",
+        "description": "torch.optim.lr_scheduler",
+        "isExtraImport": true,
+        "detail": "torch.optim.lr_scheduler",
+        "documentation": {}
+    },
+    {
+        "label": "torch.nn.functional",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "torch.nn.functional",
+        "description": "torch.nn.functional",
+        "detail": "torch.nn.functional",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "nibabel",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "nibabel",
+        "description": "nibabel",
+        "detail": "nibabel",
+        "documentation": {}
+    },
+    {
+        "label": "ElementTree",
+        "importPath": "xml.etree",
+        "description": "xml.etree",
+        "isExtraImport": true,
+        "detail": "xml.etree",
+        "documentation": {}
+    },
+    {
+        "label": "Bunch",
+        "importPath": "sklearn.utils",
+        "description": "sklearn.utils",
+        "isExtraImport": true,
+        "detail": "sklearn.utils",
+        "documentation": {}
+    },
+    {
+        "label": "dataclass",
+        "importPath": "dataclasses",
+        "description": "dataclasses",
+        "isExtraImport": true,
+        "detail": "dataclasses",
+        "documentation": {}
+    },
+    {
+        "label": "pyplot",
+        "importPath": "matplotlib",
+        "description": "matplotlib",
+        "isExtraImport": true,
+        "detail": "matplotlib",
+        "documentation": {}
+    },
+    {
+        "label": "softmax",
+        "importPath": "scipy.special",
+        "description": "scipy.special",
+        "isExtraImport": true,
+        "detail": "scipy.special",
+        "documentation": {}
+    },
+    {
+        "label": "spearmanr",
+        "importPath": "sklearn.isotonic",
+        "description": "sklearn.isotonic",
+        "isExtraImport": true,
+        "detail": "sklearn.isotonic",
+        "documentation": {}
+    },
+    {
+        "label": "auc",
+        "importPath": "sklearn.metrics",
+        "description": "sklearn.metrics",
+        "isExtraImport": true,
+        "detail": "sklearn.metrics",
+        "documentation": {}
+    },
+    {
+        "label": "confusion_matrix",
+        "importPath": "sklearn.metrics",
+        "description": "sklearn.metrics",
+        "isExtraImport": true,
+        "detail": "sklearn.metrics",
+        "documentation": {}
+    },
+    {
+        "label": "roc_curve",
+        "importPath": "sklearn.metrics",
+        "description": "sklearn.metrics",
+        "isExtraImport": true,
+        "detail": "sklearn.metrics",
+        "documentation": {}
+    },
+    {
+        "label": "TimeSeriesDataModule",
+        "importPath": "datasets.TimeSeriesDataModule",
+        "description": "datasets.TimeSeriesDataModule",
+        "isExtraImport": true,
+        "detail": "datasets.TimeSeriesDataModule",
+        "documentation": {}
+    },
+    {
+        "label": "TimeSeriesDataModule",
+        "importPath": "datasets.TimeSeriesDataModule",
+        "description": "datasets.TimeSeriesDataModule",
+        "isExtraImport": true,
+        "detail": "datasets.TimeSeriesDataModule",
+        "documentation": {}
+    },
+    {
+        "label": "TimeSeriesDataModule",
+        "importPath": "datasets.TimeSeriesDataModule",
+        "description": "datasets.TimeSeriesDataModule",
+        "isExtraImport": true,
+        "detail": "datasets.TimeSeriesDataModule",
+        "documentation": {}
+    },
+    {
+        "label": "LSTMClassifier",
+        "importPath": "models.lstm_v4",
+        "description": "models.lstm_v4",
+        "isExtraImport": true,
+        "detail": "models.lstm_v4",
+        "documentation": {}
+    },
+    {
+        "label": "LSTMClassifier",
+        "importPath": "models.lstm_v4",
+        "description": "models.lstm_v4",
+        "isExtraImport": true,
+        "detail": "models.lstm_v4",
+        "documentation": {}
+    },
+    {
+        "label": "LSTMClassifier",
+        "importPath": "models.lstm_v4",
+        "description": "models.lstm_v4",
+        "isExtraImport": true,
+        "detail": "models.lstm_v4",
+        "documentation": {}
+    },
+    {
+        "label": "datasets",
+        "importPath": "nilearn",
+        "description": "nilearn",
+        "isExtraImport": true,
+        "detail": "nilearn",
+        "documentation": {}
+    },
+    {
+        "label": "image",
+        "importPath": "nilearn",
+        "description": "nilearn",
+        "isExtraImport": true,
+        "detail": "nilearn",
+        "documentation": {}
+    },
+    {
+        "label": "get_aal",
+        "importPath": "utils.get_aal",
+        "description": "utils.get_aal",
+        "isExtraImport": true,
+        "detail": "utils.get_aal",
+        "documentation": {}
+    },
+    {
+        "label": "zscore",
+        "importPath": "scipy.stats",
+        "description": "scipy.stats",
+        "isExtraImport": true,
+        "detail": "scipy.stats",
+        "documentation": {}
+    },
+    {
+        "label": "ModelCheckpoint",
+        "importPath": "pytorch_lightning.callbacks",
+        "description": "pytorch_lightning.callbacks",
+        "isExtraImport": true,
+        "detail": "pytorch_lightning.callbacks",
+        "documentation": {}
+    },
+    {
+        "label": "EarlyStopping",
+        "importPath": "pytorch_lightning.callbacks",
+        "description": "pytorch_lightning.callbacks",
+        "isExtraImport": true,
+        "detail": "pytorch_lightning.callbacks",
+        "documentation": {}
+    },
+    {
+        "label": "WandbLogger",
+        "importPath": "pytorch_lightning.loggers",
+        "description": "pytorch_lightning.loggers",
+        "isExtraImport": true,
+        "detail": "pytorch_lightning.loggers",
+        "documentation": {}
+    },
+    {
+        "label": "wandb",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "wandb",
+        "description": "wandb",
+        "detail": "wandb",
+        "documentation": {}
+    },
+    {
+        "label": "ArgumentParser",
+        "importPath": "argparse",
+        "description": "argparse",
+        "isExtraImport": true,
+        "detail": "argparse",
+        "documentation": {}
+    },
+    {
+        "label": "ArgumentParser",
+        "importPath": "argparse",
+        "description": "argparse",
+        "isExtraImport": true,
+        "detail": "argparse",
+        "documentation": {}
+    },
+    {
+        "label": "random",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "random",
+        "description": "random",
+        "detail": "random",
+        "documentation": {}
+    },
+    {
+        "label": "shap",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "shap",
+        "description": "shap",
+        "detail": "shap",
+        "documentation": {}
+    },
+    {
+        "label": "TimeSeriesDataModule",
+        "kind": 6,
+        "importPath": "datasets.TimeSeriesDataModule",
+        "description": "datasets.TimeSeriesDataModule",
+        "peekOfCode": "class TimeSeriesDataModule(L.LightningDataModule):\n    def __init__(\n        self,\n        base_dir: str = \"/mnt/argo/Studies\",\n        window_timeserie: int = 100,\n        samples_per_file: int = 20,\n        subcortical: bool = True,\n        batch_size: int = 32,\n        num_workers: int = 20,\n        ratio_train_val: float = .8,",
+        "detail": "datasets.TimeSeriesDataModule",
+        "documentation": {}
+    },
+    {
+        "label": "TimeSeriesDataset",
+        "kind": 6,
+        "importPath": "datasets.TimeSeriesDataset",
+        "description": "datasets.TimeSeriesDataset",
+        "peekOfCode": "class TimeSeriesDataset(Dataset):\n    def __init__(self, \n                 base_dir: str = \"/mnt/argo/Studies\",\n                 window_timeserie: int = 100,\n                 samples_per_file: int = 20,\n                 subcortical: bool = False,\n                 set: str = \"TASK_FINA\",\n                 seed: int = 123,\n                 rate_output: bool = False,\n                 identifiers_output: bool = False,",
+        "detail": "datasets.TimeSeriesDataset",
+        "documentation": {}
+    },
+    {
+        "label": "LSTMBlock",
+        "kind": 6,
+        "importPath": "models.lstm_v4",
+        "description": "models.lstm_v4",
+        "peekOfCode": "class LSTMBlock(nn.Module):\n    def __init__(self, input_size, hidden_size, dropout_rate):\n        super().__init__()\n        self.lstm = nn.LSTM(\n            input_size=input_size,\n            hidden_size=hidden_size,\n            batch_first=True,\n            bidirectional=True\n        )\n        self.post_lstm = nn.Sequential(",
+        "detail": "models.lstm_v4",
+        "documentation": {}
+    },
+    {
+        "label": "LSTMClassifier",
+        "kind": 6,
+        "importPath": "models.lstm_v4",
+        "description": "models.lstm_v4",
+        "peekOfCode": "class LSTMClassifier(pl.LightningModule):\n    def __init__(\n        self,\n        input_channels: int = 481, \n        hidden_size: int = 256,\n        learning_rate: float = 1e-3,\n        dropout_rate: float = 0.1,\n        weight_decay: float = 0.01,\n        gradient_clip_val: float = 1.0,\n        noise_min: float = 0.05,",
+        "detail": "models.lstm_v4",
+        "documentation": {}
+    },
+    {
+        "label": "check_nan_in_files",
+        "kind": 2,
+        "importPath": "utils.check_nan",
+        "description": "utils.check_nan",
+        "peekOfCode": "def check_nan_in_files(base_dir: str = \"/mnt/argo/Studies/FINA\", subcortical: bool = False) -> Dict[str, Dict]:\n    \"\"\"\n    Check for NaN values in all files in the dataset.\n    Args:\n        base_dir: Base directory containing the data structure\n        subcortical: Whether to check subcortical files\n    Returns:\n        Dictionary with filenames as keys and NaN information as values\n    \"\"\"\n    nan_report = {}",
+        "detail": "utils.check_nan",
+        "documentation": {}
+    },
+    {
+        "label": "print_nan_report",
+        "kind": 2,
+        "importPath": "utils.check_nan",
+        "description": "utils.check_nan",
+        "peekOfCode": "def print_nan_report(report: Dict):\n    \"\"\"Print a formatted report of NaN findings\"\"\"\n    if not report:\n        print(\"No files with NaN values found!\")\n        return\n    print(\"\\n=== NaN Values Report ===\\n\")\n    for file_path, info in report.items():\n        print(f\"\\nFile: {os.path.basename(file_path)}\")\n        print(f\"Directory: {os.path.dirname(file_path)}\")\n        if 'error' in info:",
+        "detail": "utils.check_nan",
+        "documentation": {}
+    },
+    {
+        "label": "get_aal",
+        "kind": 2,
+        "importPath": "utils.get_aal",
+        "description": "utils.get_aal",
+        "peekOfCode": "def get_aal(atlas_dir: str = \"./external\") -> Bunch:\n    \"\"\"\n    Load AAL3 atlas from local files.\n    Expected files in directory:\n    - AAL3v1.nii or similar (.nii.gz also supported)\n    - AAL3v1.xml or similar\n    Args:\n        atlas_dir: Directory containing AAL3 files\n    Returns:\n        Bunch object containing:",
+        "detail": "utils.get_aal",
+        "documentation": {}
+    },
+    {
+        "label": "MetricConfig",
+        "kind": 6,
+        "importPath": "visualization.base",
+        "description": "visualization.base",
+        "peekOfCode": "class MetricConfig:\n    names: List[str] = ('sensitivity', 'specificity', 'ppv', 'npv', 'lr_positive', 'lr_negative', 'auc')\n    labels: List[str] = ('Sensitivity', 'Specificity', 'PPV', 'NPV', 'LR+', 'LR-', 'AUC')\n    colors: List[str] = ('blue', 'green', 'red')\nclass Visualization:\n    def __init__(self, checkpoint_path, name: str = \"lstm\", plot: bool = True):\n        self.plot = plot\n        self.checkpoint_path = checkpoint_path\n        self.name = name\n        self.subcortical = True",
+        "detail": "visualization.base",
+        "documentation": {}
+    },
+    {
+        "label": "Visualization",
+        "kind": 6,
+        "importPath": "visualization.base",
+        "description": "visualization.base",
+        "peekOfCode": "class Visualization:\n    def __init__(self, checkpoint_path, name: str = \"lstm\", plot: bool = True):\n        self.plot = plot\n        self.checkpoint_path = checkpoint_path\n        self.name = name\n        self.subcortical = True\n        self.step = \"\"\n        self.conditions = ['Worry', 'Neutral', 'Reappraisal']\n        self.contrasts = [\n            (0, 1, 'worry_vs_neutral'),",
+        "detail": "visualization.base",
+        "documentation": {}
+    },
+    {
+        "label": "set_seed",
+        "kind": 2,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "def set_seed(seed):\n    \"\"\"Set seed for reproducibility\"\"\"\n    random.seed(seed)\n    np.random.seed(seed)\n    torch.manual_seed(seed)\n    torch.cuda.manual_seed_all(seed)\n    os.environ['PYTHONHASHSEED'] = str(seed)\ndef get_next_version():\n    \"\"\"Get next version number for model checkpoints\"\"\"\n    checkpoint_dir = \"checkpoints\"",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "get_next_version",
+        "kind": 2,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "def get_next_version():\n    \"\"\"Get next version number for model checkpoints\"\"\"\n    checkpoint_dir = \"checkpoints\"\n    if not os.path.exists(checkpoint_dir):\n        return 1\n    existing_versions = [int(d.split('_version')[-1]) for d in os.listdir(checkpoint_dir) \n                        if os.path.isdir(os.path.join(checkpoint_dir, d)) and 'version' in d]\n    return max(existing_versions + [0]) + 1\ndef main(args):\n    # Set number of CPU cores",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "main",
+        "kind": 2,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "def main(args):\n    # Set number of CPU cores\n    if not args.use_gpu:\n        torch.set_num_threads(20)\n    # Set seed if provided\n    if args.seed is not None:\n        set_seed(args.seed)\n    # Initialize data module with fixed settings\n    datamodule = TimeSeriesDataModule(\n        base_dir=\"/mnt/argo/Studies\",",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "set_seed",
+        "kind": 2,
+        "importPath": "main_shap",
+        "description": "main_shap",
+        "peekOfCode": "def set_seed(seed):\n    \"\"\"Set seed for reproducibility\"\"\"\n    random.seed(seed)\n    np.random.seed(seed)\n    torch.manual_seed(seed)\n    torch.cuda.manual_seed_all(seed)\n    os.environ['PYTHONHASHSEED'] = str(seed)\ndef main(args):\n    # Set number of CPU cores\n    torch.set_num_threads(20)",
+        "detail": "main_shap",
+        "documentation": {}
+    },
+    {
+        "label": "main",
+        "kind": 2,
+        "importPath": "main_shap",
+        "description": "main_shap",
+        "peekOfCode": "def main(args):\n    # Set number of CPU cores\n    torch.set_num_threads(20)\n    # Set seed if provided\n    if args.seed is not None:\n        set_seed(args.seed)\n    # Initialize data module with fixed settings\n    datamodule = TimeSeriesDataModule(\n        base_dir=\"/mnt/argo/Studies\",\n        window_timeserie=20,  # Fixed window size",
+        "detail": "main_shap",
+        "documentation": {}
+    }
+]

@@ -1,0 +1,5 @@
+{
+    "atlas_name": "AAL",
+    "n_rois": 166,
+    "description": "Automated Anatomical Labeling (AAL) atlas."
+}
