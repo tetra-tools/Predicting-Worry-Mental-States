@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper below."
+title: "Predicting Worry Mental States using Long Short-Term Memory (LSTM) Recurrent Deep Neural Networks"
+type: software
+repository-code: "https://github.com/tetra-tools/Predicting-Worry-Mental-States"
+authors:
+  - family-names: Campion
+    given-names: Jacques-Yves
+  - family-names: Desmidt
+    given-names: Thomas
+  - family-names: Gross
+    given-names: James J.
+  - family-names: Tudorascu
+    given-names: Dana L.
+  - family-names: Andreescu
+    given-names: Carmen
+  - family-names: Karim
+    given-names: Helmet T.
+preferred-citation:
+  type: article
+  title: "Predicting Worry Mental States using Long Short-Term Memory (LSTM) Recurrent Deep Neural Networks"
+  journal: "medRxiv"
+  year: 2026
+  doi: "10.64898/2026.08.14.26360462"
+  authors:
+    - family-names: Campion
+      given-names: Jacques-Yves
+    - family-names: Desmidt
+      given-names: Thomas
+    - family-names: Gross
+      given-names: James J.
+    - family-names: Tudorascu
+      given-names: Dana L.
+    - family-names: Andreescu
+      given-names: Carmen
+    - family-names: Karim
+      given-names: Helmet T.

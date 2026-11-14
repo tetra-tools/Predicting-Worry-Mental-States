@@ -1,17 +1,45 @@
+"""Windows of regional fMRI time series with their task labels.
+
+Expected layout (``base_dir`` = ``config.DATA_ROOT``)::
+
+    FINA (cohort 1, training/validation, TR = 1 s)
+      <base_dir>/FINA/Public/Analysis/data/9xxxxx/8xxxxx/step02_WorryInduction/schaeffer_subcortical_timeseries.csv
+      <base_dir>/FINA/Public/Analysis/data/9xxxxx/8xxxxx/converted/WorryInduction/behavioral_data/responses*.mat
+      <base_dir>/FINA/Public/Analysis/misc/FINA_2023_01_06.csv                    (clinical scores)
+    RAW (cohort 2, independent test set, TR = 0.7 s, resampled to 1 s)
+      <base_dir>/RAW/Public/Analysis/data/1xxx/1xxx/step05_worry/schaeffer_subcortical_timeseries.csv
+      <base_dir>/RAW/Public/Analysis/data/1xxx/1xxx/converted/WorryTask/responses*.mat
+      config.RAW_CLINICAL_CSV                                                     (clinical scores)
+    <repo>/common_file.csv   (raw_id <-> mr_studyid: participants enrolled in both studies)
+
+Each CSV has one row per volume and 484 columns: 481 ROI time series (400 Schaefer-2018
+7-network cortical parcels then 81 AAL3 subcortical/cerebellar regions) followed by the
+3 task regressors (Worry, Neutral, Reappraisal). The task has 34 blocks of 35 TR starting
+at TR 10 (16 Worry, 10 Neutral, 8 Reappraisal).
+
+Identifiers are parsed from the file paths with regular expressions (9xxxxx/8xxxxx for
+cohort 1, 1xxx/1xxx for cohort 2): ``base_dir`` itself must not contain such digit runs.
+
+Processed samples are cached in ``<repo>/cached_data/`` (one file per configuration).
+Delete the cache to rebuild it from the CSV files.
+"""
 import re
-import scipy
+import scipy.io
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
 import os
-from typing import Tuple, Dict
+from typing import Dict, Optional, Tuple
 import numpy as np
 import glob
 from tqdm import tqdm
 
+from config import DATA_ROOT, RAW_CLINICAL_CSV
+
+
 class TimeSeriesDataset(Dataset):
     def __init__(self, 
-                 base_dir: str = "/mnt/argo/Studies",
+                 base_dir: str = DATA_ROOT,
                  window_timeserie: int = 100,
                  samples_per_file: int = 20,
                  subcortical: bool = False,
@@ -23,11 +51,19 @@ class TimeSeriesDataset(Dataset):
                  cache_dir: str = "cached_data"):
         """
         Args:
-            base_dir: Base directory containing the data structure
-            window_timeserie: Size of the sliding window
-            samples_per_file: Number of random segments to generate per file
-            subcortical: Whether to use subcortical data
-            set: Dataset type (TASK_FINA, RS_FINA, etc.)
+            base_dir: Base directory containing the data structure (see module docstring)
+            window_timeserie: Window length in TR
+            samples_per_file: Number of windows per subject. Special values:
+                1  -> whole run from TR 10 (``window_timeserie`` is overwritten),
+                34 -> one window per task block, starting at the block onset,
+                70 -> 70 windows every 17 TR,
+                otherwise -> random onsets drawn with NumPy's global generator.
+            subcortical: Use the 481-ROI files (with subcortical regions) instead of 400 ROIs
+            set: "TASK_FINA" (cohort 1) or "TASK_RAW" (cohort 2); "RS_*" = legacy resting state
+            seed: Only used in the cache file name (NumPy is seeded beforehand, see ``main.set_seed``)
+            rate_output: Also return the in-scanner worry ratings (1-5) per TR
+            identifiers_output: Also return the two subject identifiers
+            scores_output: Also return PSWQ, RSQ and HARS scaled to [0, 1]
             cache_dir: Directory to save preprocessed data
         """
         cache_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", cache_dir)
@@ -63,6 +99,11 @@ class TimeSeriesDataset(Dataset):
             cached_data = torch.load(cache_file, weights_only=False, map_location='cpu')  # Always load to CPU first
             self.samples = cached_data['samples']
             self.nan_report = cached_data.get('nan_report', {})
+            # The cache name does not include rate_output: a cache written with rate_output=False
+            # (e.g. by main.py or main_shap.py) holds zero ratings. Recompute the ratings of the
+            # cached windows from the .mat files (deterministic; the windows are unchanged).
+            if self.rate_output and not cached_data.get('rate_output', False):
+                self._recompute_rates()
         else:
             # Get all file paths
             self.get_data(database, task, subcortical_file)
@@ -111,15 +152,17 @@ class TimeSeriesDataset(Dataset):
         return None
     
     def _preprocess_matlab_data(self, dir, n_timepoints):
+        """Return the in-scanner rating of each TR (median of the ratings given during each block)."""
         # Load and process mat file
         file = glob.glob(dir)
         if file:
             df = scipy.io.loadmat(file[0])
             df = pd.DataFrame(df['responses'])
-            df[0] = df[0].apply(lambda s: int(s[0]) if s[0] else 0)
+            df[0] = df[0].apply(lambda s: int(np.asarray(s[0]).item()) if s[0] else 0)  # same as int(s[0]); .item() needed with NumPy >= 2.5
             df[1] = df[1].apply(lambda s: float(s[0][0]) if s[0] else 0)
             df[2] = df[2].apply(lambda s: str(s[0]) if s[0] else "BL")
         else:
+            print(f"Warning: no ratings file matching {dir}")
             return None, None
         
         # Create timeseries        
@@ -129,7 +172,7 @@ class TimeSeriesDataset(Dataset):
 
         # Iterate for each block
         for idx in start_idx:
-            # Relative time = 0-9 RT / 10-24 RP / 24-34 FC
+            # Relative time (from block onset - 10) = 0-9 RT / 10-24 RP / 24-34 FC
             values = df[(df[1] < idx+25) & (df[1] > idx+9)][0]
             rates[idx:idx+25] = np.median(np.array(values))
         
@@ -148,6 +191,7 @@ class TimeSeriesDataset(Dataset):
             df = pd.read_csv(file_path)
             nan_info = self._check_nan(df, file_path)
 
+            # Cohort 2 was acquired with TR = 0.7 s: resample to 1 s (cubic spline)
             if "RAW" in self.set:
                 time_index = pd.date_range(start="2024-01-01", periods=len(df), freq=f"700ms")
                 df.index = time_index
@@ -166,8 +210,7 @@ class TimeSeriesDataset(Dataset):
             n_timepoints = len(df)
             max_start_idx = n_timepoints - self.window_timeserie
             if self.rate_output:
-                folder = "WorryInduction/behavioral_data" if "FINA" in self.set else "WorryTask"
-                rates = self._preprocess_matlab_data(str(file_path).replace(f"{task}/{subcortical_file}", f"converted/{folder}/responses*.mat"), n_timepoints)
+                rates = self._preprocess_matlab_data(self._ratings_glob(file_path), n_timepoints)
             else:
                 rates = np.zeros(n_timepoints)
 
@@ -186,6 +229,7 @@ class TimeSeriesDataset(Dataset):
 
                     if self.samples_per_file == 1:
                         start_idx = 10 if "TASK" in self.set else 0
+                        # NB: overwrites the window length, hence the cache file name used when saving
                         self.window_timeserie = n_timepoints-start_idx
                     elif self.samples_per_file == 34:
                         start_idx = blocks_start[i]
@@ -205,7 +249,7 @@ class TimeSeriesDataset(Dataset):
                     else:
                         features = self._create_tensor(df_window.iloc[:, :-3].values)
                         labels = self._create_tensor(df_window.iloc[:, -3:].values)
-                        labels = (labels - (-0.2)) / (1.4)  # Normalize
+                        labels = (labels - (-0.2)) / (1.4)  # Rescale regressors from [-0.2, 1.2] to [0, 1]
                     
                     self.samples.append({
                         'features': features,
@@ -221,7 +265,8 @@ class TimeSeriesDataset(Dataset):
         # Save processed data and NaN report
         cache_data = {
             'samples': self.samples,
-            'nan_report': self.nan_report
+            'nan_report': self.nan_report,
+            'rate_output': self.rate_output,  # False: the cached ratings are zeros
         }
         print(f"Saving cache to {self._get_cache_filename()}")
         torch.save(cache_data, self._get_cache_filename())
@@ -238,11 +283,34 @@ class TimeSeriesDataset(Dataset):
                 print(f"Total NaN: {info['total_nan']}")
                 print(f"Affected columns: {info['nan_columns']}")
 
+    def _ratings_glob(self, file_path) -> str:
+        """Glob pattern of the in-scanner ratings (.mat) next to a time-series file."""
+        task = "step02_WorryInduction" if "TASK" in self.set else "step03_Rest"
+        task = task if "FINA" in self.set else "step05_worry"
+        subcortical_file = "schaeffer_timeseries.csv" if not self.subcortical else "schaeffer_subcortical_timeseries.csv"
+        folder = "WorryInduction/behavioral_data" if "FINA" in self.set else "WorryTask"
+        return str(file_path).replace(f"{task}/{subcortical_file}", f"converted/{folder}/responses*.mat")
+
+    def _recompute_rates(self):
+        """Fill the 'rate' of the cached samples, exactly as ``_preprocess_and_cache`` does."""
+        print("Cached data has no ratings: recomputing them from the .mat files")
+        by_file = {}
+        for sample in self.samples:
+            by_file.setdefault(sample['file_path'], []).append(sample)
+        for file_path, samples in by_file.items():
+            # Ratings only depend on the block onsets; the array only needs to cover the windows
+            n_timepoints = max(s['start_idx'] + s['features'].shape[0] for s in samples)
+            rates = self._preprocess_matlab_data(self._ratings_glob(file_path), n_timepoints)
+            for sample in samples:
+                start = sample['start_idx']
+                sample['rate'] = torch.FloatTensor(rates[start:start + sample['features'].shape[0]])
+
     def filter_raw_duplicate(self):
-        """Filter out duplicates for RAW data"""
+        """Filter out duplicates for RAW data (not implemented; only for the unused 'RAW'+'NEW' sets)"""
         pass
 
     def _extract_identifiers(self, idx: int):
+        """Return the two identifiers (subject, scan) found in the file path of sample ``idx``."""
         sample = self.samples[idx]
         match = re.search(r"^.+(9[0-9]{5}).+(8[0-9]{5}).+$", sample['file_path']) if "FINA" in self.set else re.search(r"^.+(1[0-9]{3}).+(1[0-9]{3}).+$", sample['file_path'])
         return match.groups()
@@ -252,25 +320,28 @@ class TimeSeriesDataset(Dataset):
         return match.groups()
     
     def _get_scores_clinic_fina(self, id):
+        """PSWQ, RSQ and HARS of a cohort-1 scan, scaled with (x - min) / range."""
         fina = pd.read_csv(os.path.join(self.base_dir, "FINA", "Public", "Analysis", "misc", "FINA_2023_01_06.csv"))
         cols = ["pswq_total", "rsq_total", "hars_score"]
         fina = fina.loc[fina["Vault_ScanID"] == str(id), cols].to_numpy().flatten()
         if fina.shape[0] == 0:
-            return ValueError(f"Subject {id} has no data")
+            raise ValueError(f"Subject {id} has no data")
         fina = (fina - np.array([0, 22, 0])) / np.array([80, 88, 56])
         return fina
     
     def _get_scores_clinic_raw(self, id):
-        raw = pd.read_csv(os.path.join("/mnt/argo/Workspaces", "Staff", "Jacques-Yves_Campion", "Public", "WorryInduction", "RAW_JY_Data_Request_2.10.25.csv"))
+        """PSWQ, RSQ and HARS of a cohort-2 participant, scaled with (x - min) / range."""
+        raw = pd.read_csv(RAW_CLINICAL_CSV)
         cols = ["pswq_total", "rsq_total", "hars_score"]
         raw["Vault_UID"] = raw.raw_id.str.replace("RAW_", "").astype(np.int64)
         raw = raw.loc[raw["Vault_UID"] == int(id), cols].to_numpy().flatten()
         if raw.shape[0] == 0:
-            return ValueError(f"Subject {id} has no data")
+            raise ValueError(f"Subject {id} has no data")
         raw = (raw - np.array([0, 22, 0])) / np.array([80, 88, 56])
         return raw
     
     def _keep_in_list(self, id1, id2):
+        """Indices of the samples whose identifiers are in ``id1`` and ``id2``."""
         keep = []
         for id in range(len(self)):
             val1, val2 = self._extract_identifiers(id)
@@ -282,6 +353,7 @@ class TimeSeriesDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Tuple:
+        """Return [features, (labels), (id1, id2), (rate), (scores)] depending on the options."""
         sample = self.samples[idx]
         returned = [sample['features']]
         if "TASK" in self.set:
@@ -302,12 +374,18 @@ class TimeSeriesDataset(Dataset):
             return self.samples[0]['features'].shape[1]
         return None
     
-    def is_raw_in_fina(self, id1: int) -> bool:
+    def is_raw_in_fina(self, id1: str) -> Optional[str]:
+        """Cohort-1 ``mr_studyid`` of a cohort-2 participant, or None if not enrolled in both."""
         if self.common_file[self.common_file["raw_id"] == id1].shape[0] > 0:
             return self.common_file[self.common_file["raw_id"] == id1]["mr_studyid"].values[0]
         return None
     
-    def is_fina_in_raw(self, id1: int) -> bool:
+    def is_fina_in_raw(self, id1: str) -> Optional[str]:
+        """Cohort-2 ``raw_id`` of a cohort-1 participant, or None if not enrolled in both.
+
+        NB: ``mr_studyid`` is compared as pandas reads it: check that its dtype matches the
+        identifiers (strings), otherwise participants enrolled in both studies are not found.
+        """
         if self.common_file[self.common_file["mr_studyid"] == id1].shape[0] > 0:
             return self.common_file[self.common_file["mr_studyid"] == id1]["raw_id"].values[0]
         return None

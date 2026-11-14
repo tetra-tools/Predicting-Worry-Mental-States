@@ -1,4 +1,190 @@
-# Predicting Worry-Related Mental States using Regional Brain Activity with LSTM Neural Networks
+# Predicting Worry Mental States using Long Short-Term Memory (LSTM) Recurrent Deep Neural Networks
 
-- [Article](https://)
-- [Poster](https://) 
+Code of the paper:
+
+> Campion J.Y., Desmidt T., Gross J.J., Tudorascu D.L., Andreescu C., Karim H.T.
+> **Predicting Worry Mental States using Long Short-Term Memory (LSTM) Recurrent Deep Neural Networks.**
+> *medRxiv* (2026). doi: [10.64898/2026.08.14.26360462](https://doi.org/10.64898/2026.08.14.26360462)
+
+A bidirectional LSTM network reads regional fMRI time series (481 regions) recorded
+during an in-scanner worry induction and reappraisal task, and predicts at each time
+point whether the participant is in a **Worry**, **Neutral** or **Reappraisal** state.
+SHAP attributions are then projected on 18 canonical brain networks to identify the
+regions and networks that drive the predictions.
+
+## Contents
+
+- [Data](#data)
+- [Installation](#installation)
+- [Reproducing the results](#reproducing-the-results)
+- [Repository structure](#repository-structure)
+- [Model](#model)
+- [Notes and limitations](#notes-and-limitations)
+- [Citation](#citation)
+
+## Data
+
+Two cohorts of older adults performed the same worry induction and reappraisal task:
+
+| Cohort | Study | N | Role in the paper | Name in the code |
+|---|---|---|---|---|
+| 1 | FINA | 116 | training (80 % of participants) and held-out validation (20 %, 24 participants) | `train`, `val` |
+| 2 | RAW | 88 | independent test cohort, never seen during training | `test` |
+
+Both studies were approved by the University of Pittsburgh IRB. **The fMRI and clinical
+data are not public**; they are available from the corresponding authors upon
+reasonable request. The repository contains no participant data.
+
+The code expects the following files (paths are set in [`config.py`](config.py) and can
+be changed with environment variables, see below):
+
+```
+$WORRY_DATA_ROOT/                                  (default: /mnt/argo/Studies)
+├── FINA/Public/Analysis/
+│   ├── data/<9xxxxx>/<8xxxxx>/step02_WorryInduction/schaeffer_subcortical_timeseries.csv
+│   ├── data/<9xxxxx>/<8xxxxx>/converted/WorryInduction/behavioral_data/responses*.mat
+│   └── misc/FINA_2023_01_06.csv                   clinical scores (PSWQ, RSQ, HARS)
+└── RAW/Public/Analysis/
+    ├── data/<1xxx>/<1xxx>/step05_worry/schaeffer_subcortical_timeseries.csv
+    └── data/<1xxx>/<1xxx>/converted/WorryTask/responses*.mat
+$WORRY_RAW_CLINICAL_CSV                            clinical scores of cohort 2
+<repository>/common_file.csv                       raw_id <-> mr_studyid (participants of both studies)
+```
+
+Each `schaeffer_subcortical_timeseries.csv` has one row per volume and 484 columns:
+the 400 cortical parcels of the Schaefer-2018 atlas (7 networks), 81 subcortical and
+cerebellar regions of AAL3, then the 3 task regressors (Worry, Neutral, Reappraisal).
+The task has 34 blocks of 35 s starting at 10 s (16 Worry, 10 Neutral, 8 Reappraisal).
+Cohort 2 (TR = 0.7 s) is resampled to 1 s. The `responses*.mat` files contain the
+in-scanner worry ratings (1-5).
+
+Atlas files are listed in [`external/README.md`](external/README.md).
+
+## Installation
+
+```bash
+git clone https://github.com/tetra-tools/Predicting-Worry-Mental-States.git
+cd Predicting-Worry-Mental-States
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Then download the AAL3 atlas into `external/` (see [`external/README.md`](external/README.md)) and,
+if your data are not on the original storage:
+
+```bash
+export WORRY_DATA_ROOT=/path/to/Studies
+export WORRY_RAW_CLINICAL_CSV=/path/to/RAW_clinical_scores.csv
+export WANDB_MODE=offline   # optional: train without a Weights & Biases account
+```
+
+## Reproducing the results
+
+All commands are run from the repository root.
+
+### 1. Train the model
+
+```bash
+python main.py --model lstm_v4
+```
+
+The defaults are the settings of the published model: windows of 20 TR, 100 random
+windows per participant, batch size 32, AdamW (learning rate 5e-4, weight decay 0.2),
+ReduceLROnPlateau, dropout 0.1, gradient clipping 0.8, input mixing decaying from 0.3 to
+0.2, seed 123, up to 250 epochs with early stopping (patience 50) on the validation L1
+loss. Training runs on CPU (20 threads, about 64 GB of RAM).
+The best checkpoint is written to `checkpoints/<model>_host-<hostname>_version<n>/`;
+the published model is `lstm_v4_host-smp-n217.crc.pitt.edu_version3/model_best_score=val_loss=0.1113.ckpt`.
+
+The first run builds a cache of the windows in `cached_data/`. Later runs (and the
+analysis code) reuse it, so keep it to get exactly the same windows.
+
+### 2. Compute SHAP values
+
+Each run explains one batch of 102 task blocks (3 participants × 34 blocks):
+
+```bash
+CKPT=checkpoints/<run>/model_best_score=val_loss=<...>.ckpt
+for b in $(seq 0 7);  do python main_shap.py --checkpoint $CKPT --population val  --batch_idx $b; done
+for b in $(seq 0 29); do python main_shap.py --checkpoint $CKPT --population test --batch_idx $b; done
+mkdir -p results/lstmv4vlt/predictions/shap && mv shap-lstmv4vf_pop-*.npz results/lstmv4vlt/predictions/shap/
+```
+
+Each batch needs more than 15 GB of RAM (the background distribution is the whole
+training set). The study ran them as a SLURM job array, one batch per task.
+
+### 3. Analyses and figures
+
+Open the notebooks of `visualization/` with Jupyter (working directory: `visualization/`),
+after setting the checkpoint path in their first cells:
+
+| Notebook | Content |
+|---|---|
+| `results_article.ipynb` | performance (MAE, AUC, sensitivity, specificity, PPV, NPV, LR+/LR-), effect of the in-scanner ratings, SHAP brain maps, network heatmaps, SHAP–clinical correlations, sample description |
+| `networks.ipynb` | dominant network over time, network transitions, by worry severity, age and sex |
+| `create_R_data.ipynb` | exports metrics and SHAP summaries to `results/` for the R figures |
+| `create_roi.ipynb` | images of the 18 network templates |
+
+All the analysis code is in [`visualization/base.py`](visualization/base.py)
+(`Visualization` class). Predictions are cached in `results/<name>/predictions/`;
+figures and brain maps (NIfTI and interactive HTML) are written to `results/<name>/`.
+
+## Repository structure
+
+```
+├── main.py                  training
+├── main_shap.py             SHAP attributions (DeepExplainer)
+├── config.py                data paths (environment variables)
+├── models/lstm_v4.py        LSTM classifier (PyTorch Lightning)
+├── datasets/
+│   ├── TimeSeriesDataset.py     windows, labels, ratings and clinical scores (+ cache)
+│   └── TimeSeriesDataModule.py  subject-level train/validation split, test cohort
+├── visualization/
+│   ├── base.py              metrics, brain maps, heatmaps
+│   └── *.ipynb              analyses of the paper
+├── utils/                   AAL3 loader, NaN check
+└── external/                network templates (+ AAL3 atlas to download)
+```
+
+## Model
+
+| Stage | Layers |
+|---|---|
+| Input | 481 ROIs → Linear 512, ReLU, Dropout, LayerNorm → Linear 256, ReLU |
+| Recurrent | 2 residual blocks: bidirectional LSTM → Linear, ReLU, Dropout, LayerNorm (256 → 256 → 128) |
+| Output | Linear 64, ReLU, Dropout, LayerNorm → Linear 3 → (tanh + 1) / 2 |
+
+The targets are the three task regressors rescaled to [0, 1] and the loss is the mean
+absolute error, at every time point. During training each window is mixed with another
+window of the same batch, `x ← (x + λ·x_perm) / (1 + λ)`, with λ = 0.3 for two epochs,
+then decreasing linearly to 0.2 over 200 epochs.
+
+For evaluation, the predicted state at each time point is the condition with the highest
+output. AUCs are computed one-vs-rest and one-vs-one by pooling all time points of a
+population, for three window configurations: the 34 task blocks (25 s from each block
+onset), the whole run, and the random 20 s training windows.
+
+## Notes and limitations
+
+- Training was run on CPU; `--use_gpu` only lowers the number of CPU threads.
+- `shap.DeepExplainer` has no specific rule for `LSTM` and `LayerNorm` modules (it warns
+  about them and `check_additivity` is disabled); attributions explain the prediction at
+  the last time point of each 25 s block window.
+- Methods of `visualization/base.py` marked *legacy* (resting-state predictions,
+  clinical patterns) were exploratory and are not used in the paper.
+- The identifiers of the participants are parsed from the file paths, so
+  `WORRY_DATA_ROOT` must not contain runs of digits such as `9xxxxx` or `1xxx`.
+
+## Citation
+
+```bibtex
+@article{campion2026worry,
+  title   = {Predicting Worry Mental States using Long Short-Term Memory (LSTM) Recurrent Deep Neural Networks},
+  author  = {Campion, Jacques-Yves and Desmidt, Thomas and Gross, James J. and Tudorascu, Dana L. and Andreescu, Carmen and Karim, Helmet T.},
+  journal = {medRxiv},
+  year    = {2026},
+  doi     = {10.64898/2026.08.14.26360462}
+}
+```
+
+See also [`CITATION.cff`](CITATION.cff).

@@ -1,3 +1,18 @@
+"""LSTM classifier of worry-related mental states (model ``lstm_v4`` of the paper).
+
+Input : regional fMRI time series, shape ``(batch, time, 481)``
+        (400 Schaefer-2018 cortical ROIs + 81 AAL3 subcortical/cerebellar ROIs).
+Output: one value in [0, 1] per time point and per condition, shape ``(batch, time, 3)``,
+        in the order (Worry, Neutral, Reappraisal). Targets are the task regressors
+        rescaled to [0, 1] (see ``TimeSeriesDataset``) and the loss is the L1 distance.
+
+Architecture
+    input_processing : Linear 481->512, ReLU, Dropout(p/2), LayerNorm, Linear 512->256, ReLU
+    lstm_layers      : LSTMBlock(256->256) then LSTMBlock(256->128), each a bidirectional
+                       LSTM + Linear/ReLU/Dropout/LayerNorm with a residual projection
+    output           : Linear 128->64, ReLU, Dropout(p/4), LayerNorm, Linear 64->3,
+                       then (tanh(x) + 1) / 2 clamped to [1e-7, 1 - 1e-7]
+"""
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingWarmRestarts
@@ -7,6 +22,8 @@ from typing import Tuple
 import numpy as np
 
 class LSTMBlock(nn.Module):
+    """Bidirectional LSTM followed by a projection to ``hidden_size`` with a residual connection."""
+
     def __init__(self, input_size, hidden_size, dropout_rate):
         super().__init__()
         self.lstm = nn.LSTM(
@@ -29,6 +46,21 @@ class LSTMBlock(nn.Module):
         return self.post_lstm(pred) + identity
 
 class LSTMClassifier(pl.LightningModule):
+    """Sequence-to-sequence classifier of Worry / Neutral / Reappraisal states.
+
+    Args:
+        input_channels: Number of ROIs (481 with subcortical regions).
+        hidden_size: Width of the first LSTM block (the second one uses ``hidden_size // 2``).
+        learning_rate, weight_decay: AdamW parameters.
+        dropout_rate: Dropout of the LSTM blocks (``/2`` at the input, ``/4`` at the output).
+        gradient_clip_val: Stored for logging; clipping is applied by the Trainer.
+        noise_min, noise_max, noise_duration, noise_scheduler: Input-mixing augmentation,
+            see :meth:`get_noise_level` and :meth:`training_step`.
+        scheduler: ``'plateau'`` (ReduceLROnPlateau, published model) or ``'cosine'``.
+        cosine_annealing_T0, cosine_annealing_T_mult: Only used with ``scheduler='cosine'``.
+        logger_type: Stored in the hyper-parameters only.
+    """
+
     def __init__(
         self,
         input_channels: int = 481, 
@@ -91,6 +123,12 @@ class LSTMClassifier(pl.LightningModule):
         self._init_weights()
 
     def _init_weights(self):
+        """Xavier (input-hidden) and orthogonal (hidden-hidden) init of the LSTM weights.
+
+        NB: the ``'linear'`` branch never matches because parameter names are e.g.
+        ``input_processing.0.weight`` (no ``'linear'`` in them), so the Linear layers keep
+        PyTorch's default initialisation. Left unchanged so that results are reproducible.
+        """
         for name, param in self.named_parameters():
             if 'lstm' in name:
                 if 'weight_ih' in name:
@@ -115,11 +153,16 @@ class LSTMClassifier(pl.LightningModule):
         return pred
     
     def get_noise_level(self):
-        # Keep minimum noise during warmup
+        """Augmentation strength for the current epoch.
+
+        ``noise_max`` during the first ``warmup_epochs`` (2) epochs, then decreases
+        (linearly or quadratically) to ``noise_min`` over ``noise_duration`` epochs.
+        """
+        # Keep maximum noise during warmup
         if self.current_epoch < self.warmup_epochs:
             return self.max_noise
-            
-        # Progressive increase after warmup
+
+        # Progressive decrease after warmup
         progress = (self.current_epoch - self.warmup_epochs) / self.noise_duration
         progress = progress**2 if self.noise_scheduler == 'quadratic' else progress
         noise = self.max_noise - (self.max_noise - self.min_noise) * min(progress, 1.0)
@@ -128,9 +171,11 @@ class LSTMClassifier(pl.LightningModule):
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:
         x, y = batch
 
-        # Add fixed Gaussian noise during training
+        # Data augmentation: mix each window with another window of the batch (random
+        # permutation) weighted by the noise level, then renormalise:
+        #   x <- (x + level * x[perm]) / (1 + level)
+        # Labels are not mixed.
         if self.training:
-            # Generate noise on same device as input
             noise = x[torch.randperm(x.size(0), device=x.device)] * self.get_noise_level()
             x = (x + noise) / (1 + self.get_noise_level())
 
@@ -170,6 +215,8 @@ class LSTMClassifier(pl.LightningModule):
         return y_hat
 
     def on_validation_epoch_end(self):
+        # NB: also runs after Lightning's sanity check, whose loss is included in
+        # ``best_val_loss`` / ``mean_val_loss`` (logging only; checkpointing uses ``val_loss``).
         avg_loss = torch.stack(self.history_val_loss).mean()
         self.best_val_loss = min(self.best_val_loss, avg_loss)
         self.history_val_loss = []
@@ -196,8 +243,13 @@ class LSTMClassifier(pl.LightningModule):
         return y_hat
 
     def accuracy(self, y_hat, y):
-        y_pred_proba = torch.nn.functional.softmax(y_hat, dim=-1).detach().numpy()
-        y = y.detach().numpy()
+        """Per-time-point accuracy: recall of each condition weighted by its share of task blocks.
+
+        The class of a time point is the argmax over the 3 conditions (16 Worry, 10 Neutral
+        and 8 Reappraisal blocks out of 34). Logged for monitoring only.
+        """
+        y_pred_proba = torch.nn.functional.softmax(y_hat, dim=-1).detach().cpu().numpy()
+        y = y.detach().cpu().numpy()
         
         # Get predicted classes
         y_pred_classes = np.argmax(y_pred_proba, axis=-1)

@@ -1,23 +1,28 @@
-# Core dependencies
-torch>=1.9.0
-pytorch-lightning>=1.5.0
-wandb>=0.12.0
-numpy>=1.19.2
-pandas>=1.3.0
-matplotlib>=3.4.0
-seaborn>=0.11.0
-plotly>=5.24.1
+# Python >= 3.10 (the study used Python 3.10 on the University of Pittsburgh CRC cluster).
+# Lower bounds are the versions required by the code; the code was re-tested end to end
+# (synthetic data) with torch 2.15, pytorch-lightning 2.6, shap 0.54, numpy 2.5,
+# pandas 3.1, scikit-learn 1.9, nilearn 0.14 and matplotlib 3.11.
 
-# Data processing
-nibabel>=3.2.0  # For brain imaging data
-nilearn>=0.8.0  # For brain visualization
-scikit-learn>=0.24.0
+# Training
+torch>=2.0
+pytorch-lightning>=2.0  # ModelCheckpoint(enable_version_counter=...), Trainer(strategy="auto")
+wandb>=0.15             # set WANDB_MODE=offline to run without an account
+numpy>=1.23
+pandas>=1.5
+scipy>=1.9
+scikit-learn>=1.0
+tqdm>=4.62
 
-# Utilities
-tqdm>=4.62.0
-pyyaml>=5.4.0
+# Attribution analysis
+shap>=0.46              # returns arrays of shape (n, time, roi, condition), as expected by visualization/base.py
 
-# Optional but recommended
-tensorboard>=2.6.0  # For tensorboard logging
-scipy>=1.7.0  # For statistical computations
-shap>=0.46.0 # For attribution analysis
+# Brain imaging and figures
+nibabel>=3.2
+nilearn>=0.9            # downloads the Schaefer-2018 atlas on first use
+matplotlib>=3.5
+seaborn>=0.12
+SciencePlots>=2.0       # figure style of the paper
+networkx>=2.6           # visualization/networks.ipynb
+
+# Notebooks
+jupyter

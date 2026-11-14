@@ -1,3 +1,10 @@
+"""Lightning DataModule: subject-level split of cohort 1 + cohort 2 as test set.
+
+Naming used throughout the repository:
+    train / val : cohort 1 (FINA), split by subject (80/20 by default, or 4 folds)
+    test        : cohort 2 (RAW), the independent cohort never seen during training
+"""
+from config import DATA_ROOT
 from datasets.TimeSeriesDataset import TimeSeriesDataset
 import pytorch_lightning as L
 from torch.utils.data import DataLoader
@@ -9,7 +16,7 @@ import math
 class TimeSeriesDataModule(L.LightningDataModule):
     def __init__(
         self,
-        base_dir: str = "/mnt/argo/Studies",
+        base_dir: str = DATA_ROOT,
         window_timeserie: int = 100,
         samples_per_file: int = 20,
         subcortical: bool = True,
@@ -43,6 +50,12 @@ class TimeSeriesDataModule(L.LightningDataModule):
         self.set = set
         
     def setup(self, stage = ""):
+        """Build the datasets. ``stage`` may contain "fit" (train/val), "test", both ("fit-test")
+        or be empty (all). Any other value (e.g. "pred") builds nothing.
+
+        ``notrandom`` = [val_id1, val_id2] (optionally + [train_id1, train_id2]) forces the
+        subject split, e.g. to reuse the validation subjects of another window configuration.
+        """
         if stage == "" or "fit" in stage:
             train_val_dataset = TimeSeriesDataset(
                 base_dir=self.base_dir,
@@ -63,7 +76,7 @@ class TimeSeriesDataModule(L.LightningDataModule):
                     raise ValueError(f"Expected at least 100 subjects, got {identifiers.shape[0]}")
                 nsubject = identifiers.shape[0]
 
-                # Val set
+                # Val set: random 20 % of subjects (k_fold=None) or fold k of a shuffled 4-fold split
                 rng = np.random.default_rng(seed=self.seed)
                 if self.k is None:
                     shuffled_identifiers = identifiers
@@ -128,12 +141,12 @@ class TimeSeriesDataModule(L.LightningDataModule):
         kwargs['shuffle'] = True  # Enable shuffling for training
         return DataLoader(self.train_dataset, **kwargs)
 
-    def val_dataloader(self): # As a reminder, validation is testing in lightning convention
+    def val_dataloader(self): # Held-out subjects of cohort 1
         kwargs = self._get_dataloader_kwargs()
         kwargs['shuffle'] = False  # No shuffling for validation
         return DataLoader(self.val_dataset, **kwargs)
 
-    def test_dataloader(self): # As a reminder, testing is validation in lightning convention
+    def test_dataloader(self): # Cohort 2 (independent test set)
         kwargs = self._get_dataloader_kwargs()
         kwargs['shuffle'] = False  # No shuffling for testing
         return DataLoader(self.test_dataset, **kwargs)

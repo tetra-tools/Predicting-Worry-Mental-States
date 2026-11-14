@@ -7,6 +7,11 @@ import numpy as np
 def check_nan_in_files(base_dir: str = "/mnt/argo/Studies/FINA", subcortical: bool = False) -> Dict[str, Dict]:
     """
     Check for NaN values in all files in the dataset.
+
+    NB: stand-alone helper. It looks for ``<base_dir>/9*/8*/<task>/`` whereas the data
+    module reads ``<DATA_ROOT>/FINA/Public/Analysis/data/9*/8*/``: pass
+    ``base_dir=".../FINA/Public/Analysis/data"`` to check the files used by the model
+    (the data module also reports and skips files with NaN when it builds its cache).
     
     Args:
         base_dir: Base directory containing the data structure

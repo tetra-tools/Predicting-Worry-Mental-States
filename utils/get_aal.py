@@ -7,10 +7,11 @@ from sklearn.utils import Bunch
 
 def get_aal(atlas_dir: str = "./external") -> Bunch:
     """
-    Load AAL3 atlas from local files.
+    Load AAL3 atlas from local files (see external/README.md to download them).
     Expected files in directory:
-    - AAL3v1.nii or similar (.nii.gz also supported)
-    - AAL3v1.xml or similar
+    - AAL3v1.nii (2 mm, same grid as the Schaefer-2018 2 mm atlas; .nii.gz also supported)
+    - AAL3v1_1mm.xml (labels and indices)
+    If several files match, the first one in alphabetical order is used (AAL3v1.nii).
     
     Args:
         atlas_dir: Directory containing AAL3 files
@@ -26,7 +27,7 @@ def get_aal(atlas_dir: str = "./external") -> Bunch:
     atlas_dir = Path(atlas_dir)
     
     # Find nifti file
-    nifti_files = list(atlas_dir.glob("AAL3*.nii*"))
+    nifti_files = sorted(atlas_dir.glob("AAL3*.nii*"))  # sorted: deterministic choice
     if not nifti_files:
         raise FileNotFoundError(
             f"No AAL3 nifti file found in {atlas_dir}. "
@@ -35,11 +36,11 @@ def get_aal(atlas_dir: str = "./external") -> Bunch:
     atlas_file = str(nifti_files[0])
     
     # Find XML file
-    xml_files = list(atlas_dir.glob("AAL3*_1mm.xml"))
+    xml_files = sorted(atlas_dir.glob("AAL3*_1mm.xml"))
     if not xml_files:
         raise FileNotFoundError(
             f"No AAL3 XML file found in {atlas_dir}. "
-            "Expected filename starting with 'AAL3' and ending with .xml"
+            "Expected filename starting with 'AAL3' and ending with _1mm.xml"
         )
     label_file = xml_files[0]
     
