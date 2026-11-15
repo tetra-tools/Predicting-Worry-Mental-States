@@ -13,6 +13,7 @@ cd "$(dirname "$0")"
 
 # Input paths: config.py (WORRY_RECOVERY_ROOT and the other WORRY_* variables)
 cfg() { python -c "import config; print(config.$1)"; }
+count() { local n=0 f; for f in "$@"; do [ -e "$f" ] && n=$((n + 1)); done; echo "$n"; }   # 0 if no match
 CKPT=${CKPT:-$(cfg CHECKPOINT)}
 SHAP_DIR=$(cfg SHAP_DIR)
 COMMON_FILE=$(cfg COMMON_FILE)
@@ -23,10 +24,10 @@ echo "== 0. Inputs"
 for f in "$CKPT" "$COMMON_FILE" "$(cfg FINA_CLINICAL_CSV)" "$(cfg RAW_CLINICAL_CSV)"; do
   test -f "$f" || { echo "Not found: $f"; exit 1; }
 done
-n_shap=$(ls "$SHAP_DIR"/shap-lstmv4vf_pop-*_batch-*.npz 2>/dev/null | wc -l)
+n_shap=$(count "$SHAP_DIR"/shap-lstmv4vf_pop-*_batch-*.npz)
 [ "$n_shap" -eq 38 ] || { echo "Expected 38 SHAP files in $SHAP_DIR, found $n_shap"; exit 1; }
-n_cache=$(ls "$(cfg CACHE_DIR)"/cache_data-TASK_*_roi-wSubcortical_seed-123.pt 2>/dev/null | wc -l)
-n_pred=$(ls "$(cfg PREDICTIONS_DIR)"/*_n-all.pt 2>/dev/null | wc -l)
+n_cache=$(count "$(cfg CACHE_DIR)"/cache_data-TASK_*_roi-wSubcortical_seed-123.pt)
+n_pred=$(count "$(cfg PREDICTIONS_DIR)/$NAME"/*_n-all.pt)
 echo "checkpoint, common_file.csv, clinical files and 38 SHAP files found"
 echo "$n_cache/6 window caches (missing ones are rebuilt from WORRY_DATA_ROOT), $n_pred/9 cached predictions (missing ones are recomputed)"
 

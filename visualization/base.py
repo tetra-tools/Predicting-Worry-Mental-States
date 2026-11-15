@@ -8,7 +8,7 @@ configurations (``type``):
     "full"     : the whole run (1190 TR) per subject
 and ``step``/``pop``: "train" / "val" (cohort 1) and "test" (cohort 2).
 
-Predictions are cached in ``config.PREDICTIONS_DIR`` (``*.pt``). SHAP values computed by
+Predictions are cached in ``config.PREDICTIONS_DIR/<name>/`` (``*.pt``). SHAP values computed by
 ``main_shap.py`` are read from ``config.SHAP_DIR``
 (``shap-lstmv4vf_pop-val_batch-{0..7}.npz`` and ``shap-lstmv4vf_pop-test_batch-{0..29}.npz``).
 Figures are written to ``results/<name>/predictions/{validation,test}/heatmap/``.
@@ -74,7 +74,7 @@ class Visualization:
 
     def _get_predictions_filename(self, n_subjects: Optional[int] = None, step: str = "val", type: str = "full") -> str:
         """Generate a filename for predictions that reflects the configuration"""
-        base_dir = PREDICTIONS_DIR
+        base_dir = os.path.join(PREDICTIONS_DIR, self.name)   # one folder per analysis name, as results/<name>/ before
         os.makedirs(base_dir, exist_ok=True)
         
         # Build filename components

@@ -5,7 +5,7 @@ Expected layout (``base_dir`` = ``config.DATA_ROOT``)::
     FINA (cohort 1, training/validation, TR = 1 s)
       <base_dir>/FINA/Public/Analysis/data/9xxxxx/8xxxxx/step02_WorryInduction/schaeffer_subcortical_timeseries.csv
       <base_dir>/FINA/Public/Analysis/data/9xxxxx/8xxxxx/converted/WorryInduction/behavioral_data/responses*.mat
-      config.FINA_SCORES_CSV  (default <base_dir>/FINA/Public/Analysis/misc/FINA_2023_01_06.csv, clinical scores)
+      <base_dir>/FINA/Public/Analysis/misc/FINA_2023_01_06.csv  (clinical scores; or WORRY_FINA_SCORES_CSV)
     RAW (cohort 2, independent test set, TR = 0.7 s, resampled to 1 s)
       <base_dir>/RAW/Public/Analysis/data/1xxx/1xxx/step05_worry/schaeffer_subcortical_timeseries.csv
       <base_dir>/RAW/Public/Analysis/data/1xxx/1xxx/converted/WorryTask/responses*.mat
@@ -330,7 +330,7 @@ class TimeSeriesDataset(Dataset):
     
     def _get_scores_clinic_fina(self, id):
         """PSWQ, RSQ and HARS of a cohort-1 scan, scaled with (x - min) / range."""
-        fina = pd.read_csv(FINA_SCORES_CSV)
+        fina = pd.read_csv(FINA_SCORES_CSV or os.path.join(self.base_dir, "FINA", "Public", "Analysis", "misc", "FINA_2023_01_06.csv"))
         cols = ["pswq_total", "rsq_total", "hars_score"]
         fina = fina.loc[fina["Vault_ScanID"] == str(id), cols].to_numpy().flatten()
         if fina.shape[0] == 0:

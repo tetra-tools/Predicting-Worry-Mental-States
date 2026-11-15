@@ -58,7 +58,7 @@ $WORRY_RECOVERY_ROOT/                              (default: /ix1/hkarim/users/j
 ├── checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/model_best_score=val_loss=0.1113.ckpt
 ├── shap/shap-lstmv4vf_pop-val_batch-{0..7}.npz, shap-lstmv4vf_pop-test_batch-{0..29}.npz
 ├── cached_data/cache_data-TASK_{FINA,RAW}_size-{20_sample-100,25_sample-34,1190_sample-1}_roi-wSubcortical_seed-123.pt
-├── predictions/model_best_score=val_loss=0.1113_sub-true_type-{training,block,full}_step-{train,val,test}_n-all.pt
+├── predictions/lstmv4vlt/model_best_score=val_loss=0.1113_sub-true_type-{training,block,full}_step-{train,val,test}_n-all.pt
 ├── clinical/FINA_2025_01_17.csv                   clinical variables of cohort 1
 ├── clinical/RAW_JY_Data_Request_2.10.25.csv       clinical scores of cohort 2
 ├── clinical/pheno_raw.csv                         education of cohort 2 (sample description)
@@ -93,7 +93,8 @@ export WANDB_MODE=offline   # optional: train without a Weights & Biases account
 
 Single files can also be moved with `WORRY_CHECKPOINT`, `WORRY_SHAP_DIR`, `WORRY_CACHE_DIR`,
 `WORRY_PREDICTIONS_DIR`, `WORRY_COMMON_FILE`, `WORRY_FINA_CLINICAL_CSV`,
-`WORRY_RAW_CLINICAL_CSV`, `WORRY_RAW_PHENO_CSV` and `WORRY_FINA_SCORES_CSV`.
+`WORRY_RAW_CLINICAL_CSV`, `WORRY_RAW_PHENO_CSV` and `WORRY_FINA_SCORES_CSV`. Relative paths are
+taken from the repository root.
 
 ## Reproducing the results
 
@@ -144,7 +145,7 @@ they read the checkpoint and the other inputs from `config.py`:
 | `create_R_data.ipynb` | exports metrics and SHAP summaries to `results/` for the R figures |
 
 All the analysis code is in [`visualization/base.py`](visualization/base.py)
-(`Visualization` class). Predictions are cached in `$WORRY_PREDICTIONS_DIR`;
+(`Visualization` class). Predictions are cached in `$WORRY_PREDICTIONS_DIR/<name>/`;
 heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
 
 ### 4. Statistical analyses (R)
@@ -194,7 +195,7 @@ Files to provide (folders relative to `$WORRY_RECOVERY_ROOT`, see [Data](#data))
 | `FINA_2025_01_17.csv` | `clinical/` | clinical variables of cohort 1 |
 | `RAW_JY_Data_Request_2.10.25.csv` | `clinical/` | clinical variables of cohort 2 |
 | *For `RUN_NOTEBOOK=1`:* `pheno_raw.csv` | `clinical/` | education of cohort 2 (sample description) |
-| *Optional:* 9 cached predictions `model_best_score=val_loss=0.1113_sub-true_type-{training,block,full}_step-{train,val,test}_n-all.pt` | `predictions/` | faster (recomputed from the checkpoint otherwise) |
+| *Optional:* 9 cached predictions `model_best_score=val_loss=0.1113_sub-true_type-{training,block,full}_step-{train,val,test}_n-all.pt` | `predictions/lstmv4vlt/` | faster (recomputed from the checkpoint otherwise) |
 | *Optional:* previous exports `export_*.csv` | `R/data/` of the repository (moved to `R/data_previous/` and checked) | `tools/check_network_projection.py`, `R/check_auc_direction.R` |
 | *Only if a cache is missing:* time series, `responses*.mat`, `FINA_2023_01_06.csv` | `$WORRY_DATA_ROOT` | rebuilding the cache |
 
