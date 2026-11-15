@@ -126,6 +126,15 @@ All the analysis code is in [`visualization/base.py`](visualization/base.py)
 (`Visualization` class). Predictions are cached in `results/<name>/predictions/`;
 heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
 
+### 4. Statistical analyses (R)
+
+[`R/Article.Rmd`](R/Article.Rmd) contains the mixed-effects models (block-wise MAE of
+cohort 2; SMA network attributions), the per-participant AUCs, the timing of the SHAP
+attributions and the network figures. Knit it from the `R/` folder: it reads the
+per-time-point exports `R/data/export_{train,val,test}_{training,block,full}.csv` and
+`R/data/export_{val,test}_block_with_shap.csv` (labels, predictions, ratings, clinical
+scores and SHAP values per ROI and per network) and writes the figures to `R/plots/`.
+
 ## Repository structure
 
 ```
@@ -139,6 +148,7 @@ heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
 ├── visualization/
 │   ├── base.py              metrics and heatmaps
 │   └── *.ipynb              analyses of the paper
+├── R/Article.Rmd            mixed-effects models, per-participant AUCs, SHAP figures
 ├── utils/                   NaN check
 └── external/                network templates
 ```

@@ -7,6 +7,10 @@ results/
 *.csv
 !external/schaeffer_subcortical_smith_templates.csv
 
+# Exports read by R/Article.Rmd and its figures
+R/data/
+R/plots/
+
 # Model checkpoints and experiment tracking
 checkpoints/
 wandb/
