@@ -16,13 +16,13 @@ reference networks"): each SHAP map (block, time point, condition) is L2-normali
 the 481 ROIs and projected on the L2-normalised templates of
 external/schaeffer_subcortical_smith_templates.csv, along the ROI axis.
 
-Inputs (see readme.md, "Re-running the analyses of the paper"): the checkpoint, the SHAP
-files of main_shap.py, the window caches (cached_data/) or the time series, common_file.csv
-and the clinical files set in config.py.
+Inputs (paths in config.py, see readme.md, "Re-running the analyses of the paper"): the
+checkpoint, the SHAP files of main_shap.py, the window caches (or the time series), the
+cached predictions (optional), common_file.csv and the clinical files.
 
 Example::
 
-    python export_R_data.py --checkpoint checkpoints/<run>/model_best_score=val_loss=0.1113.ckpt
+    python export_R_data.py                       # checkpoint: config.CHECKPOINT
 """
 import os
 import sys
@@ -34,7 +34,7 @@ import pandas as pd
 REPO = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, REPO)
 
-from config import FINA_CLINICAL_CSV, RAW_CLINICAL_CSV  # noqa: E402
+from config import CHECKPOINT, COMMON_FILE, FINA_CLINICAL_CSV, RAW_CLINICAL_CSV  # noqa: E402
 
 CONDITIONS = ["worry", "neutral", "reappraisal"]
 CLINICAL = ["pswq_total", "rsq_total", "hars_score", "age", "sex", "madrs_total", "hamd_total", "education"]
@@ -69,7 +69,7 @@ def load_clinical():
 
 def load_common():
     """Pairs (cohort-2 participant, cohort-1 participant) of common_file.csv."""
-    common = pd.read_csv(os.path.join(REPO, "common_file.csv"))
+    common = pd.read_csv(COMMON_FILE)
     common = common[common["raw_id"].notna() & common["mr_studyid"].notna()]
     return pd.DataFrame({"raw": norm_id(common["raw_id"]).values, "fina": norm_id(common["mr_studyid"]).values})
 
@@ -134,9 +134,8 @@ def export(v, split, kind, clinical, common, out_dir, templates=None):
 
 def main():
     parser = ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--checkpoint", default=os.path.join(
-        REPO, "checkpoints", "lstm_v4_host-smp-n217.crc.pitt.edu_version3", "model_best_score=val_loss=0.1113.ckpt"))
-    parser.add_argument("--name", default="lstmv4vlt", help="results/<name>/ folder (predictions and SHAP files)")
+    parser.add_argument("--checkpoint", default=CHECKPOINT)
+    parser.add_argument("--name", default="lstmv4vlt", help="results/<name>/ folder (heatmaps)")
     parser.add_argument("--out", default=os.path.join(REPO, "R", "data"))
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)

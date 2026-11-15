@@ -36,20 +36,33 @@ Both studies were approved by the University of Pittsburgh IRB. **The fMRI and c
 data are not public**; they are available from the corresponding authors upon
 reasonable request. The repository contains no participant data.
 
-The code expects the following files (paths are set in [`config.py`](config.py) and can
-be changed with environment variables, see below):
+All paths are set in [`config.py`](config.py) and can be changed with environment
+variables (`WORRY_*`, see below). The time series (to train the model or rebuild the window
+caches):
 
 ```
 $WORRY_DATA_ROOT/                                  (default: /mnt/argo/Studies)
 ├── FINA/Public/Analysis/
 │   ├── data/<9xxxxx>/<8xxxxx>/step02_WorryInduction/schaeffer_subcortical_timeseries.csv
 │   ├── data/<9xxxxx>/<8xxxxx>/converted/WorryInduction/behavioral_data/responses*.mat
-│   └── misc/FINA_2023_01_06.csv                   clinical scores (PSWQ, RSQ, HARS)
+│   └── misc/FINA_2023_01_06.csv                   clinical scores stored in the caches (PSWQ, RSQ, HARS)
 └── RAW/Public/Analysis/
     ├── data/<1xxx>/<1xxx>/step05_worry/schaeffer_subcortical_timeseries.csv
     └── data/<1xxx>/<1xxx>/converted/WorryTask/responses*.mat
-$WORRY_RAW_CLINICAL_CSV                            clinical scores of cohort 2
-<repository>/common_file.csv                       raw_id <-> mr_studyid (participants of both studies)
+```
+
+The inputs of the analyses of the paper, in one folder:
+
+```
+$WORRY_RECOVERY_ROOT/                              (default: /ix1/hkarim/users/jpc211/postdoc/recovery)
+├── checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/model_best_score=val_loss=0.1113.ckpt
+├── shap/shap-lstmv4vf_pop-val_batch-{0..7}.npz, shap-lstmv4vf_pop-test_batch-{0..29}.npz
+├── cached_data/cache_data-TASK_{FINA,RAW}_size-{20_sample-100,25_sample-34,1190_sample-1}_roi-wSubcortical_seed-123.pt
+├── predictions/model_best_score=val_loss=0.1113_sub-true_type-{training,block,full}_step-{train,val,test}_n-all.pt
+├── clinical/FINA_2025_01_17.csv                   clinical variables of cohort 1
+├── clinical/RAW_JY_Data_Request_2.10.25.csv       clinical scores of cohort 2
+├── clinical/pheno_raw.csv                         education of cohort 2 (sample description)
+└── common_file.csv                                raw_id <-> mr_studyid (participants of both studies)
 ```
 
 Each `schaeffer_subcortical_timeseries.csv` has one row per volume and 484 columns:
@@ -73,10 +86,14 @@ pip install -r requirements.txt
 Then, if your data are not on the original storage:
 
 ```bash
-export WORRY_DATA_ROOT=/path/to/Studies
-export WORRY_RAW_CLINICAL_CSV=/path/to/RAW_clinical_scores.csv
+export WORRY_RECOVERY_ROOT=/path/to/recovery   # inputs of the analyses (layout above)
+export WORRY_DATA_ROOT=/path/to/Studies        # time series
 export WANDB_MODE=offline   # optional: train without a Weights & Biases account
 ```
+
+Single files can also be moved with `WORRY_CHECKPOINT`, `WORRY_SHAP_DIR`, `WORRY_CACHE_DIR`,
+`WORRY_PREDICTIONS_DIR`, `WORRY_COMMON_FILE`, `WORRY_FINA_CLINICAL_CSV`,
+`WORRY_RAW_CLINICAL_CSV`, `WORRY_RAW_PHENO_CSV` and `WORRY_FINA_SCORES_CSV`.
 
 ## Reproducing the results
 
@@ -96,27 +113,30 @@ loss. Training runs on CPU (20 threads, about 64 GB of RAM).
 The best checkpoint is written to `checkpoints/<model>_host-<hostname>_version<n>/`;
 the published model is `lstm_v4_host-smp-n217.crc.pitt.edu_version3/model_best_score=val_loss=0.1113.ckpt`.
 
-The first run builds a cache of the windows in `cached_data/`. Later runs (and the
-analysis code) reuse it, so keep it to get exactly the same windows.
+The first run builds a cache of the windows in `$WORRY_CACHE_DIR` (default
+`$WORRY_RECOVERY_ROOT/cached_data/`). Later runs (and the analysis code) reuse it, so keep
+it to get exactly the same windows.
 
 ### 2. Compute SHAP values
 
 Each run explains one batch of 102 task blocks (3 participants × 34 blocks):
 
 ```bash
-CKPT=checkpoints/<run>/model_best_score=val_loss=<...>.ckpt
+CKPT=checkpoints/<run>/model_best_score=val_loss=<...>.ckpt   # default: config.CHECKPOINT
 for b in $(seq 0 7);  do python main_shap.py --checkpoint $CKPT --population val  --batch_idx $b; done
 for b in $(seq 0 29); do python main_shap.py --checkpoint $CKPT --population test --batch_idx $b; done
-mkdir -p results/lstmv4vlt/predictions/shap && mv shap-lstmv4vf_pop-*.npz results/lstmv4vlt/predictions/shap/
 ```
+
+The files are written in the current directory, never in `$WORRY_SHAP_DIR`, so the
+published SHAP values cannot be overwritten; move them there to analyse them.
 
 Each batch needs more than 15 GB of RAM (the background distribution is the whole
 training set). The study ran them as a SLURM job array, one batch per task.
 
 ### 3. Analyses and figures
 
-Open the notebooks of `visualization/` with Jupyter (working directory: `visualization/`),
-after setting the checkpoint path in their first cells:
+Open the notebooks of `visualization/` with Jupyter (working directory: `visualization/`);
+they read the checkpoint and the other inputs from `config.py`:
 
 | Notebook | Content |
 |---|---|
@@ -124,7 +144,7 @@ after setting the checkpoint path in their first cells:
 | `create_R_data.ipynb` | exports metrics and SHAP summaries to `results/` for the R figures |
 
 All the analysis code is in [`visualization/base.py`](visualization/base.py)
-(`Visualization` class). Predictions are cached in `results/<name>/predictions/`;
+(`Visualization` class). Predictions are cached in `$WORRY_PREDICTIONS_DIR`;
 heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
 
 ### 4. Statistical analyses (R)
@@ -137,6 +157,22 @@ per-time-point exports `R/data/export_{train,val,test}_{training,block,full}.csv
 scores and SHAP values per ROI and per network) written by `export_R_data.py`, and writes
 the figures to `R/plots/`.
 
+### 5. Brain maps of the networks (Figure 4)
+
+The right part of Figure 4 shows the templates of the selected networks (those of the
+curves), not SHAP values. `tools/make_network_maps.py` writes each template as a volume
+(`<network>.nii`), a BrainNet Viewer node file (`<network>.node`) and a preview, plus a
+cerebellum surface (`cerebellum.nv`, BrainNet's cortical meshes have none):
+
+```bash
+python tools/make_network_maps.py --aal-dir /path/to/AAL3 --networks Cerebellum DAN
+```
+
+`--aal-dir` contains `AAL3v1.nii` (2 mm) and `AAL3v1_1mm.xml`; AAL3 regions are painted with
+their index from the XML (the indices are not consecutive). In BrainNet Viewer, map
+`<network>.nii` on `BrainMesh_ICBM152_smoothed.nv` and on `cerebellum.nv` with the same
+options file, e.g. `BrainNet_MapCfg('cerebellum.nv', 'Cerebellum.nii', 'options.mat', 'out.png')`.
+
 ## Re-running the analyses of the paper
 
 `rerun_paper_analyses.sh` regenerates the exports and all the figures of the R analyses
@@ -147,22 +183,23 @@ bash rerun_paper_analyses.sh                 # checks, exports (R/data/), R anal
 RUN_NOTEBOOK=1 bash rerun_paper_analyses.sh  # also executes visualization/results_article.ipynb
 ```
 
-Files to provide:
+Files to provide (folders relative to `$WORRY_RECOVERY_ROOT`, see [Data](#data)):
 
 | File | Location | Used for |
 |---|---|---|
 | Published checkpoint `model_best_score=val_loss=0.1113.ckpt` | `checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/` | predictions |
-| 38 SHAP files `shap-lstmv4vf_pop-val_batch-{0..7}.npz` and `shap-lstmv4vf_pop-test_batch-{0..29}.npz` | `results/lstmv4vlt/predictions/shap/` | SHAP columns of the exports |
+| 38 SHAP files `shap-lstmv4vf_pop-val_batch-{0..7}.npz` and `shap-lstmv4vf_pop-test_batch-{0..29}.npz` | `shap/` | SHAP columns of the exports |
 | 6 window caches `cache_data-TASK_{FINA,RAW}_size-{20_sample-100,25_sample-34,1190_sample-1}_roi-wSubcortical_seed-123.pt` | `cached_data/` | the same windows as in the paper (the 100 random windows per participant can only be reproduced from them) |
-| `common_file.csv` | repository root | participants enrolled in both cohorts |
-| `FINA_2025_01_17.csv` | `$WORRY_DATA_ROOT/FINA/Public/Analysis/misc/` (or `WORRY_FINA_CLINICAL_CSV`) | clinical variables of cohort 1 |
-| `RAW_JY_Data_Request_2.10.25.csv` | path given by `WORRY_RAW_CLINICAL_CSV` | clinical variables of cohort 2 |
-| *Optional:* cached predictions `model_best_score=val_loss=0.1113_sub-true_type-*_step-*_n-all.pt` | `results/lstmv4vlt/predictions/` | faster (recomputed from the checkpoint otherwise) |
-| *Optional:* previous exports `export_*.csv` | `R/data/` (moved to `R/data_previous/` and checked) | `tools/check_network_projection.py`, `R/check_auc_direction.R` |
-| *Only if a cache is missing:* time series and `responses*.mat` | `$WORRY_DATA_ROOT` (see [Data](#data)) | rebuilding the cache |
+| `common_file.csv` | `./` | participants enrolled in both cohorts |
+| `FINA_2025_01_17.csv` | `clinical/` | clinical variables of cohort 1 |
+| `RAW_JY_Data_Request_2.10.25.csv` | `clinical/` | clinical variables of cohort 2 |
+| *For `RUN_NOTEBOOK=1`:* `pheno_raw.csv` | `clinical/` | education of cohort 2 (sample description) |
+| *Optional:* 9 cached predictions `model_best_score=val_loss=0.1113_sub-true_type-{training,block,full}_step-{train,val,test}_n-all.pt` | `predictions/` | faster (recomputed from the checkpoint otherwise) |
+| *Optional:* previous exports `export_*.csv` | `R/data/` of the repository (moved to `R/data_previous/` and checked) | `tools/check_network_projection.py`, `R/check_auc_direction.R` |
+| *Only if a cache is missing:* time series, `responses*.mat`, `FINA_2023_01_06.csv` | `$WORRY_DATA_ROOT` | rebuilding the cache |
 
-The script stops if the checkpoint, `common_file.csv` or one of the 38 SHAP files is
-missing. `export_R_data.py` writes the exports (`R/data/export_*.csv`, network attributions
+The script stops if the checkpoint, `common_file.csv`, a clinical file or one of the 38
+SHAP files is missing. `export_R_data.py` writes the exports (`R/data/export_*.csv`, network attributions
 projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots/`.
 
 ## Repository structure
@@ -183,6 +220,7 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── R/Article.Rmd            mixed-effects models, per-participant AUCs, SHAP figures
 ├── R/check_auc_direction.R  effect of pROC's automatic direction on previous exports
 ├── tools/check_network_projection.py  which projection produced the network columns of an export
+├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
 ├── utils/                   NaN check
 └── external/                network templates
 ```
