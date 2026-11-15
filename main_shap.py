@@ -11,8 +11,9 @@ one of the trained model.
 
 One run processes one batch of 102 blocks (3 participants x 34 blocks) and writes
 ``shap-lstmv4vf_pop-<population>_batch-<batch_idx>.npz`` (``shap``: (102, 25, 481, 3),
-``id1``/``id2``: identifiers) in the current directory. The visualization code expects
-these files in ``results/<name>/predictions/shap/``:
+``id1``/``id2``: identifiers) in the current directory (never in ``config.SHAP_DIR``,
+so that the published SHAP values cannot be overwritten). The visualization code reads
+these files from ``config.SHAP_DIR``:
     --population val  : batches 0-7  (24 validation participants)
     --population test : batches 0-29 (88 participants of cohort 2)
 
@@ -20,7 +21,7 @@ Memory: about 15 GB per batch with the full background (run on 64 GB nodes).
 
 Example::
 
-    python main_shap.py --checkpoint checkpoints/<run>/model_best_score=val_loss=0.1113.ckpt --batch_idx 0
+    python main_shap.py --population test --batch_idx 0          # checkpoint: config.CHECKPOINT
 """
 import os
 import random
@@ -31,7 +32,7 @@ import shap
 import torch
 from tqdm import tqdm
 
-from config import DATA_ROOT
+from config import CHECKPOINT, DATA_ROOT
 from datasets.TimeSeriesDataModule import TimeSeriesDataModule
 from models.lstm_v4 import LSTMClassifier as LSTMClassifierv4
 
@@ -127,7 +128,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument('--checkpoint', default="./checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/model_best_score=val_loss=0.1113.ckpt", type=str,
+    parser.add_argument('--checkpoint', default=CHECKPOINT, type=str,
                         help='Checkpoint of the trained model (default: published model)')
     parser.add_argument('--batch_idx', type=int, default=1, help='Index of the batch of 102 blocks to explain')
     parser.add_argument('--population', type=str, default='test', choices=['test', 'val'],

@@ -8,8 +8,8 @@ configurations (``type``):
     "full"     : the whole run (1190 TR) per subject
 and ``step``/``pop``: "train" / "val" (cohort 1) and "test" (cohort 2).
 
-Predictions are cached in ``results/<name>/predictions/*.pt``. SHAP values computed by
-``main_shap.py`` must be placed in ``results/<name>/predictions/shap/``
+Predictions are cached in ``config.PREDICTIONS_DIR/<name>/`` (``*.pt``). SHAP values computed by
+``main_shap.py`` are read from ``config.SHAP_DIR``
 (``shap-lstmv4vf_pop-val_batch-{0..7}.npz`` and ``shap-lstmv4vf_pop-test_batch-{0..29}.npz``).
 Figures are written to ``results/<name>/predictions/{validation,test}/heatmap/``.
 """
@@ -21,6 +21,7 @@ from scipy.special import softmax
 from sklearn.metrics import auc, confusion_matrix, roc_curve
 import torch
 import numpy as np
+from config import PREDICTIONS_DIR, SHAP_DIR
 from datasets.TimeSeriesDataModule import TimeSeriesDataModule
 from models.lstm_v4 import LSTMClassifier
 from typing import Dict, List, Optional
@@ -73,8 +74,7 @@ class Visualization:
 
     def _get_predictions_filename(self, n_subjects: Optional[int] = None, step: str = "val", type: str = "full") -> str:
         """Generate a filename for predictions that reflects the configuration"""
-        base_dir = f"results/{self.name}/predictions"
-        base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", base_dir)
+        base_dir = os.path.join(PREDICTIONS_DIR, self.name)   # one folder per analysis name, as results/<name>/ before
         os.makedirs(base_dir, exist_ok=True)
         
         # Build filename components
@@ -96,7 +96,6 @@ class Visualization:
         base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name)
         os.makedirs(f"{base_dir}/predictions/validation/heatmap", exist_ok=True)
         os.makedirs(f"{base_dir}/predictions/test/heatmap", exist_ok=True)
-        os.makedirs(f"{base_dir}/predictions/shap", exist_ok=True)
 
     def _init_data_and_model(self):
         """Initialize the data modules (full / training / block windows) and load the model"""
@@ -120,7 +119,7 @@ class Visualization:
     def _init_shap_values(self):
         """Load the SHAP values computed by main_shap.py (shape: blocks x 25 TR x 481 ROIs x 3 conditions)"""
         shap_vals, shap_vals_id1, shap_vals_id2 = [], [], []
-        base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name, "predictions", "shap")
+        base_dir = SHAP_DIR
         for i in range(8):
             tmp = np.load(f"{base_dir}/shap-lstmv4vf_pop-val_batch-{i}.npz")
             shap_vals.append(tmp["shap"])
@@ -132,7 +131,6 @@ class Visualization:
 
         shap_test, shap_test_id1, shap_test_id2 = [], [], []
         for i in range(30):
-            base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name, "predictions", "shap")
             tmp = np.load(f"{base_dir}/shap-lstmv4vf_pop-test_batch-{i}.npz")
             shap_test.append(tmp["shap"])
             shap_test_id1.extend(tmp["id1"])

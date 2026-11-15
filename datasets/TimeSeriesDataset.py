@@ -5,12 +5,12 @@ Expected layout (``base_dir`` = ``config.DATA_ROOT``)::
     FINA (cohort 1, training/validation, TR = 1 s)
       <base_dir>/FINA/Public/Analysis/data/9xxxxx/8xxxxx/step02_WorryInduction/schaeffer_subcortical_timeseries.csv
       <base_dir>/FINA/Public/Analysis/data/9xxxxx/8xxxxx/converted/WorryInduction/behavioral_data/responses*.mat
-      <base_dir>/FINA/Public/Analysis/misc/FINA_2023_01_06.csv                    (clinical scores)
+      <base_dir>/FINA/Public/Analysis/misc/FINA_2023_01_06.csv  (clinical scores; or WORRY_FINA_SCORES_CSV)
     RAW (cohort 2, independent test set, TR = 0.7 s, resampled to 1 s)
       <base_dir>/RAW/Public/Analysis/data/1xxx/1xxx/step05_worry/schaeffer_subcortical_timeseries.csv
       <base_dir>/RAW/Public/Analysis/data/1xxx/1xxx/converted/WorryTask/responses*.mat
       config.RAW_CLINICAL_CSV                                                     (clinical scores)
-    <repo>/common_file.csv   (raw_id <-> mr_studyid: participants enrolled in both studies)
+    config.COMMON_FILE       (raw_id <-> mr_studyid: participants enrolled in both studies)
 
 Each CSV has one row per volume and 484 columns: 481 ROI time series (400 Schaefer-2018
 7-network cortical parcels then 81 AAL3 subcortical/cerebellar regions) followed by the
@@ -20,7 +20,7 @@ at TR 10 (16 Worry, 10 Neutral, 8 Reappraisal).
 Identifiers are parsed from the file paths with regular expressions (9xxxxx/8xxxxx for
 cohort 1, 1xxx/1xxx for cohort 2): ``base_dir`` itself must not contain such digit runs.
 
-Processed samples are cached in ``<repo>/cached_data/`` (one file per configuration).
+Processed samples are cached in ``config.CACHE_DIR`` (one file per configuration).
 Delete the cache to rebuild it from the CSV files.
 """
 import re
@@ -34,7 +34,7 @@ import numpy as np
 import glob
 from tqdm import tqdm
 
-from config import DATA_ROOT, RAW_CLINICAL_CSV
+from config import DATA_ROOT, RAW_CLINICAL_CSV, CACHE_DIR, COMMON_FILE, FINA_SCORES_CSV
 
 
 class TimeSeriesDataset(Dataset):
@@ -48,7 +48,7 @@ class TimeSeriesDataset(Dataset):
                  rate_output: bool = False,
                  identifiers_output: bool = False,
                  scores_output: bool = False,
-                 cache_dir: str = "cached_data"):
+                 cache_dir: str = CACHE_DIR):
         """
         Args:
             base_dir: Base directory containing the data structure (see module docstring)
@@ -64,7 +64,7 @@ class TimeSeriesDataset(Dataset):
             rate_output: Also return the in-scanner worry ratings (1-5) per TR
             identifiers_output: Also return the two subject identifiers
             scores_output: Also return PSWQ, RSQ and HARS scaled to [0, 1]
-            cache_dir: Directory to save preprocessed data
+            cache_dir: Directory of the window caches (config.CACHE_DIR; relative paths are taken from the repository root)
         """
         cache_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", cache_dir)
         
@@ -116,8 +116,7 @@ class TimeSeriesDataset(Dataset):
             self._preprocess_and_cache()
 
         # Get common file
-        common_file = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "common_file.csv")
-        self.common_file = pd.read_csv(common_file)
+        self.common_file = pd.read_csv(COMMON_FILE)
         self.common_file = self.common_file[self.common_file["raw_id"].notna() & self.common_file["mr_studyid"].notna()]
         self.common_file["raw_id"] = self.common_file["raw_id"].apply(lambda x: str(x).replace("RAW_", ""))
         self.common_file = self.common_file[["raw_id", "mr_studyid"]]
@@ -331,7 +330,7 @@ class TimeSeriesDataset(Dataset):
     
     def _get_scores_clinic_fina(self, id):
         """PSWQ, RSQ and HARS of a cohort-1 scan, scaled with (x - min) / range."""
-        fina = pd.read_csv(os.path.join(self.base_dir, "FINA", "Public", "Analysis", "misc", "FINA_2023_01_06.csv"))
+        fina = pd.read_csv(FINA_SCORES_CSV or os.path.join(self.base_dir, "FINA", "Public", "Analysis", "misc", "FINA_2023_01_06.csv"))
         cols = ["pswq_total", "rsq_total", "hars_score"]
         fina = fina.loc[fina["Vault_ScanID"] == str(id), cols].to_numpy().flatten()
         if fina.shape[0] == 0:

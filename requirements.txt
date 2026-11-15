@@ -21,5 +21,10 @@ matplotlib>=3.5
 seaborn>=0.12
 SciencePlots>=2.0       # figure style of the paper
 
+# Brain maps of the networks (tools/make_network_maps.py)
+nibabel>=3.2
+nilearn>=0.9            # Schaefer-2018 atlas
+scikit-image>=0.19      # cerebellum surface
+
 # Notebooks
 jupyter
