@@ -22,6 +22,7 @@ regions and networks that drive the predictions.
 - [Model](#model)
 - [Notes and limitations](#notes-and-limitations)
 - [Citation](#citation)
+- [License](#license)
 
 ## Data
 
@@ -266,3 +267,10 @@ onset), the whole run, and the random 20 s training windows.
 ```
 
 See also [`CITATION.cff`](CITATION.cff).
+
+## License
+
+The code is released under the [MIT License](LICENSE). The atlases and network templates
+of `external/` remain under the terms of their original sources (Schaefer-2018, AAL3,
+Smith et al.). The data of the two cohorts and the trained model are not part of this
+repository and are not covered by this license.

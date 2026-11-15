@@ -3,6 +3,7 @@ message: "If you use this code, please cite the paper below."
 title: "Predicting Worry Mental States using Long Short-Term Memory (LSTM) Recurrent Deep Neural Networks"
 type: software
 repository-code: "https://github.com/tetra-tools/Predicting-Worry-Mental-States"
+license: MIT
 authors:
   - family-names: Campion
     given-names: Jacques-Yves
