@@ -62,9 +62,12 @@ prepare_plot_vars <- function(df) {
 }
 
 # Function to calculate AUCs safely
+# The direction is fixed (higher prediction = positive class): with pROC's default
+# direction = "auto", the direction is chosen per subject from the medians, so a
+# subject below chance gets 1 - AUC.
 safe_auc <- function(response, predictor, quiet = TRUE) {
   tryCatch({
-    as.numeric(auc(response, predictor, quiet = quiet))
+    as.numeric(auc(response, predictor, levels = c(FALSE, TRUE), direction = "<", quiet = quiet))
   }, error = function(e) NA_real_)
 }
 
@@ -329,7 +332,7 @@ grouped_ggbetweenstats(
   results.subtitle = FALSE,
   p.adjust.method = "holm",
   centrality.plotting = TRUE,
-  ggplot.component = list(ylim(0.5, 1), ylab("AUC"))
+  ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"))  # zoom only: ylim() would drop AUCs < 0.5
 )
 ggsave("plots/figure_auc.png", width = 15, height = 10, dpi = 300)
 ```
@@ -364,7 +367,7 @@ plot_dan <- plot_data %>%
       PSWQ = (pswq_total-16)/(80-16),
       RSQ = (rsq_total-22)/(88-22),
       HARS = hars_score/56,
-      Rating = (rate-1/4),
+      Rating = (rate-1)/4,  # 0-1 like in the MAE model (was rate - 1/4)
       Subject = id1
     )
 model <- lmer(shap_value_scaled ~ Age + Sex + PSWQ + RSQ + HARS + Rating + Class + Class*Age + Class*Sex + Class*PSWQ + Class*RSQ + Class*HARS + Class*Rating  + (timepoint|Subject), data = plot_dan)
