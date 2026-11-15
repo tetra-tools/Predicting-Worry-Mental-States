@@ -1,0 +1,22 @@
+# Participant data and derived files: never commit
+common_file.csv
+cached_data/
+results/
+*.npz
+*.pt
+*.csv
+!external/schaeffer_subcortical_smith_templates.csv
+
+# Model checkpoints and experiment tracking
+checkpoints/
+wandb/
+lightning_logs/
+*.ckpt
+
+# Python / editors / OS
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store

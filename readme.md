@@ -58,7 +58,7 @@ The task has 34 blocks of 35 s starting at 10 s (16 Worry, 10 Neutral, 8 Reappra
 Cohort 2 (TR = 0.7 s) is resampled to 1 s. The `responses*.mat` files contain the
 in-scanner worry ratings (1-5).
 
-Atlas files are listed in [`external/README.md`](external/README.md).
+The network templates used by the analyses are described in [`external/README.md`](external/README.md).
 
 ## Installation
 
@@ -69,8 +69,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Then download the AAL3 atlas into `external/` (see [`external/README.md`](external/README.md)) and,
-if your data are not on the original storage:
+Then, if your data are not on the original storage:
 
 ```bash
 export WORRY_DATA_ROOT=/path/to/Studies
@@ -120,14 +119,12 @@ after setting the checkpoint path in their first cells:
 
 | Notebook | Content |
 |---|---|
-| `results_article.ipynb` | performance (MAE, AUC, sensitivity, specificity, PPV, NPV, LR+/LR-), effect of the in-scanner ratings, SHAP brain maps, network heatmaps, SHAP–clinical correlations, sample description |
-| `networks.ipynb` | dominant network over time, network transitions, by worry severity, age and sex |
+| `results_article.ipynb` | performance (MAE, AUC, sensitivity, specificity, PPV, NPV, LR+/LR-), AUC within the block, effect of the in-scanner ratings, SHAP network heatmaps, SHAP–clinical correlations, sample description |
 | `create_R_data.ipynb` | exports metrics and SHAP summaries to `results/` for the R figures |
-| `create_roi.ipynb` | images of the 18 network templates |
 
 All the analysis code is in [`visualization/base.py`](visualization/base.py)
 (`Visualization` class). Predictions are cached in `results/<name>/predictions/`;
-figures and brain maps (NIfTI and interactive HTML) are written to `results/<name>/`.
+heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
 
 ## Repository structure
 
@@ -140,10 +137,10 @@ figures and brain maps (NIfTI and interactive HTML) are written to `results/<nam
 │   ├── TimeSeriesDataset.py     windows, labels, ratings and clinical scores (+ cache)
 │   └── TimeSeriesDataModule.py  subject-level train/validation split, test cohort
 ├── visualization/
-│   ├── base.py              metrics, brain maps, heatmaps
+│   ├── base.py              metrics and heatmaps
 │   └── *.ipynb              analyses of the paper
-├── utils/                   AAL3 loader, NaN check
-└── external/                network templates (+ AAL3 atlas to download)
+├── utils/                   NaN check
+└── external/                network templates
 ```
 
 ## Model
@@ -170,8 +167,6 @@ onset), the whole run, and the random 20 s training windows.
 - `shap.DeepExplainer` has no specific rule for `LSTM` and `LayerNorm` modules (it warns
   about them and `check_additivity` is disabled); attributions explain the prediction at
   the last time point of each 25 s block window.
-- Methods of `visualization/base.py` marked *legacy* (resting-state predictions,
-  clinical patterns) were exploratory and are not used in the paper.
 - The identifiers of the participants are parsed from the file paths, so
   `WORRY_DATA_ROOT` must not contain runs of digits such as `9xxxxx` or `1xxx`.
 

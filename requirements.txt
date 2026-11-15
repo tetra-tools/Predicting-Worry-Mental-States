@@ -1,7 +1,7 @@
 # Python >= 3.10 (the study used Python 3.10 on the University of Pittsburgh CRC cluster).
 # Lower bounds are the versions required by the code; the code was re-tested end to end
 # (synthetic data) with torch 2.15, pytorch-lightning 2.6, shap 0.54, numpy 2.5,
-# pandas 3.1, scikit-learn 1.9, nilearn 0.14 and matplotlib 3.11.
+# pandas 3.1, scikit-learn 1.9 and matplotlib 3.11.
 
 # Training
 torch>=2.0
@@ -16,13 +16,10 @@ tqdm>=4.62
 # Attribution analysis
 shap>=0.46              # returns arrays of shape (n, time, roi, condition), as expected by visualization/base.py
 
-# Brain imaging and figures
-nibabel>=3.2
-nilearn>=0.9            # downloads the Schaefer-2018 atlas on first use
+# Figures
 matplotlib>=3.5
 seaborn>=0.12
 SciencePlots>=2.0       # figure style of the paper
-networkx>=2.6           # visualization/networks.ipynb
 
 # Notebooks
 jupyter
