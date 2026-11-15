@@ -1,4 +1,5 @@
-"""Analysis and figures of the paper (metrics, SHAP brain maps, network heatmaps).
+"""Analyses of the paper used by ``results_article.ipynb`` and ``create_R_data.ipynb``
+(classification metrics, rating heatmaps, SHAP network heatmaps).
 
 ``Visualization(checkpoint_path, name)`` loads cohorts 1 and 2 with three window
 configurations (``type``):
@@ -10,31 +11,21 @@ and ``step``/``pop``: "train" / "val" (cohort 1) and "test" (cohort 2).
 Predictions are cached in ``results/<name>/predictions/*.pt``. SHAP values computed by
 ``main_shap.py`` must be placed in ``results/<name>/predictions/shap/``
 (``shap-lstmv4vf_pop-val_batch-{0..7}.npz`` and ``shap-lstmv4vf_pop-test_batch-{0..29}.npz``).
-Figures are written to ``results/<name>/``.
-
-Methods marked *legacy* (resting-state predictions, clinical patterns) were exploratory
-and are not used in the paper; they do not run with the current data module.
+Figures are written to ``results/<name>/predictions/{validation,test}/heatmap/``.
 """
 from dataclasses import dataclass
 import os
 import warnings
 from matplotlib import pyplot as plt
 from scipy.special import softmax
-from scipy.stats import spearmanr  # same function as the former `from sklearn.isotonic import spearmanr`
 from sklearn.metrics import auc, confusion_matrix, roc_curve
 import torch
 import numpy as np
 from datasets.TimeSeriesDataModule import TimeSeriesDataModule
 from models.lstm_v4 import LSTMClassifier
-from nilearn import datasets, image
-from utils.get_aal import get_aal
-import nibabel as nib
-from scipy.stats import zscore as scipy_zscore
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional
 from pathlib import Path
 import pandas as pd
-
-from typing import Dict, Any
 
 @dataclass
 class MetricConfig:
@@ -48,7 +39,6 @@ class Visualization:
         self.checkpoint_path = checkpoint_path
         self.name = name
         self.subcortical = True
-        self.step = ""
         self.conditions = ['Worry', 'Neutral', 'Reappraisal']
         self.contrasts = [
             (0, 1, 'worry_vs_neutral'),
@@ -68,7 +58,6 @@ class Visualization:
 
         # Initialize data and model
         self._init_data_and_model()
-        self._get_atlas()
 
         # Compute or load SHAP values
         self._init_shap_values()
@@ -82,7 +71,7 @@ class Visualization:
                           "figures will use the default matplotlib style.")
         plt.rcParams.update({"font.size":12}) 
 
-    def _get_predictions_filename(self, n_subjects: Optional[int] = None, step: str = "pred", type: str = "full") -> str:
+    def _get_predictions_filename(self, n_subjects: Optional[int] = None, step: str = "val", type: str = "full") -> str:
         """Generate a filename for predictions that reflects the configuration"""
         base_dir = f"results/{self.name}/predictions"
         base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", base_dir)
@@ -105,17 +94,9 @@ class Visualization:
         """Create necessary output directories"""
         # Create main results directory structure
         base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name)
-        os.makedirs(f"{base_dir}/predictions/compare", exist_ok=True)
-        os.makedirs(f"{base_dir}/predictions/validation", exist_ok=True)
-        os.makedirs(f"{base_dir}/predictions/restingstate", exist_ok=True)
-        os.makedirs(f"{base_dir}/predictions/test", exist_ok=True)
         os.makedirs(f"{base_dir}/predictions/validation/heatmap", exist_ok=True)
         os.makedirs(f"{base_dir}/predictions/test/heatmap", exist_ok=True)
-        os.makedirs(f"{base_dir}/clinical/scores", exist_ok=True)
         os.makedirs(f"{base_dir}/predictions/shap", exist_ok=True)
-        os.makedirs(f"{base_dir}/maps/nifti", exist_ok=True)
-        os.makedirs(f"{base_dir}/maps/surfice", exist_ok=True)
-        os.makedirs(f"{base_dir}/maps/plot", exist_ok=True)
 
     def _init_data_and_model(self):
         """Initialize the data modules (full / training / block windows) and load the model"""
@@ -131,10 +112,6 @@ class Visualization:
         self.block_dataset_trainvaltest = TimeSeriesDataModule(subcortical=self.subcortical, window_timeserie=25, 
                                           samples_per_file=34, rate_output=True, identifiers_output=True, scores_output=True, batch_size=32)
         self.block_dataset_trainvaltest.setup("fit-test")
-
-        self.full_dataset_pred = TimeSeriesDataModule(subcortical=self.subcortical, window_timeserie=480, 
-                                          samples_per_file=1, identifiers_output=True, batch_size=32, scores_output=True)
-        self.full_dataset_pred.setup("pred")  # legacy resting-state module: builds nothing
 
         # Load model and set to eval mode
         self.trained_model = LSTMClassifier.load_from_checkpoint(self.checkpoint_path)
@@ -164,20 +141,18 @@ class Visualization:
         self.shap_test_id1 = np.array(shap_test_id1).flatten()
         self.shap_test_id2 = np.array(shap_test_id2).flatten()
 
-    def _get_predictions(self, step: str = "pred", type: str = "full"):
+    def _get_predictions(self, step: str = "val", type: str = "full"):
         """Model predictions for a population (cached on disk after the first call).
 
         Args:
-            step: "train", "val" (cohort 1) or "test" (cohort 2); "pred" = legacy resting state
+            step: "train", "val" (cohort 1) or "test" (cohort 2)
             type: "full", "block" or "training" window configuration
 
         Returns:
-            [data, predictions, labels, id1, id2, rates, scores] (no labels/rates for "pred")
+            [data, predictions, labels, id1, id2, rates, scores]
         """
         if type == "full":
-            if step == "pred":
-                dataset = self.full_dataset_pred.predict_dataloader()
-            elif step == "train":
+            if step == "train":
                 dataset = self.full_dataset_trainvaltest.train_dataloader()
             elif step == "val":
                 dataset = self.full_dataset_trainvaltest.val_dataloader()
@@ -207,16 +182,13 @@ class Visualization:
         # Generate new predictions
         data, predictions, labels, idx1, idx2, rates, scores = [], [], [], [], [], [], []
         for batch in dataset:
+            # batch = [features, labels, id1, id2, rate, scores]
             input = batch[0]
-            i = 0
-
-            if step != "pred":
-                labels.append(batch[1])
-                i = 1
-                rates.extend(batch[(i+3)])
+            labels.append(batch[1])
+            rates.extend(batch[4])
             scores.extend(batch[-1])
-            idx1.extend(batch[(i+1)])
-            idx2.extend(batch[(i+2)])
+            idx1.extend(batch[2])
+            idx2.extend(batch[3])
 
             with torch.no_grad():
                 input = input.clone().detach()
@@ -228,112 +200,15 @@ class Visualization:
         result = []
         result.append(torch.cat(data))
         result.append(torch.cat(predictions))
-        if step != "pred":
-            result.append(torch.cat(labels))
+        result.append(torch.cat(labels))
         result.append(idx1)
         result.append(idx2)
-        if step != "pred":
-            result.append(rates)
+        result.append(rates)
         result.append(scores)
             
         # Save predictions to file
         torch.save(result, predictions_file)
         return result
-
-    def _get_atlas(self):
-        """Load the Schaefer-2018 (400 ROIs, 7 networks, 2 mm) and AAL3 atlases.
-
-        Returns (cached after the first call):
-            Schaefer volume, AAL3 volume, affine, and for each of the 81 subcortical ROIs
-            its position in the AAL3 label list.
-        """
-        if getattr(self, "_atlas_cache", None) is not None:
-            return self._atlas_cache
-        self.atlas_schaeffer = datasets.fetch_atlas_schaefer_2018(n_rois=400, yeo_networks=7, resolution_mm=2)
-        atlas_img_schaeffer = image.load_img(self.atlas_schaeffer.maps)
-        self.atlas_aal = get_aal()
-        atlas_img_aal = image.load_img(self.atlas_aal.maps)
-        
-        # Get ROI names
-        rois = ["rAmygdala_L", "rAmygdala_R", "rCaudate_L", "rCaudate_R", "rCerebellum_10_L", "rCerebellum_10_R", 
-                "rCerebellum_3_L", "rCerebellum_3_R", "rCerebellum_4_5_L", "rCerebellum_4_5_R", "rCerebellum_6_L", 
-                "rCerebellum_6_R", "rCerebellum_7b_L", "rCerebellum_7b_R", "rCerebellum_8_L", "rCerebellum_8_R", 
-                "rCerebellum_9_L", "rCerebellum_9_R", "rCerebellum_Crus1_L", "rCerebellum_Crus1_R", "rCerebellum_Crus2_L", 
-                "rCerebellum_Crus2_R", "rHippocampus_L", "rHippocampus_R", "rLC_L", "rLC_R", "rN_Acc_L", "rN_Acc_R", 
-                "rPallidum_L", "rPallidum_R", "rParaHippocampal_L", "rParaHippocampal_R", "rPutamen_L", "rPutamen_R", 
-                "rRaphe_D", "rRaphe_M", "rRed_N_L", "rRed_N_R", "rSN_pc_L", "rSN_pc_R", "rSN_pr_L", "rSN_pr_R", 
-                "rThal_AV_L", "rThal_AV_R", "rThal_IL_L", "rThal_IL_R", "rThal_LGN_L", "rThal_LGN_R", "rThal_LP_L", 
-                "rThal_LP_R", "rThal_MDl_L", "rThal_MDl_R", "rThal_MDm_L", "rThal_MDm_R", "rThal_MGN_L", "rThal_MGN_R", 
-                "rThal_PuA_L", "rThal_PuA_R", "rThal_PuI_L", "rThal_PuI_R", "rThal_PuL_L", "rThal_PuL_R", "rThal_PuM_L", 
-                "rThal_PuM_R", "rThal_Re_L", "rThal_Re_R", "rThal_VA_L", "rThal_VA_R", "rThal_VL_L", "rThal_VL_R", 
-                "rThal_VPL_L", "rThal_VPL_R", "rVTA_L", "rVTA_R", "rVermis_10", "rVermis_3", "rVermis_4_5", "rVermis_6", 
-                "rVermis_7", "rVermis_8", "rVermis_9"]
-        
-        idx = [np.where(np.array(self.atlas_aal.labels) == a.replace("r", "", 1))[0] for a in rois]
-        idx = [id[0] for id in idx if id.shape[0]>0]
-
-        # nilearn < 0.10 returns bytes, nilearn >= 0.11 prepends "Background": keep the 400 ROI names
-        schaeffer_labels = [l.decode() if isinstance(l, bytes) else str(l) for l in self.atlas_schaeffer.labels]
-        schaeffer_labels = np.array([l for l in schaeffer_labels if l != "Background"], dtype=str)
-        aal_labels = np.array(self.atlas_aal.labels, dtype=str)[idx]
-        self.roi_names = np.concatenate([schaeffer_labels, aal_labels])
-
-        self._atlas_cache = (atlas_img_schaeffer.get_fdata(), atlas_img_aal.get_fdata(), atlas_img_schaeffer.affine, idx)
-        return self._atlas_cache
-
-    def _get_roi_volume(self):
-        """Volume giving, for each voxel, the index (0-480) of the ROI painted there (-1 elsewhere).
-
-        Schaefer parcel i+1 -> ROI i, then AAL3 voxels of subcortical ROI 400+j (painted last,
-        so they win where both atlases overlap). AAL3 voxels hold the region *index* of the
-        atlas (non-consecutive: 35, 36, 81 and 82 are unused), not the position of the region
-        in the label list.
-        """
-        if getattr(self, "_roi_volume", None) is not None:
-            return self._roi_volume
-        atlas_data_schaeffer, atlas_data_aal, _, idx = self._get_atlas()
-        roi_volume = np.full(atlas_data_schaeffer.shape, -1, dtype=np.int64)
-        for i in range(400):
-            roi_volume[atlas_data_schaeffer == (i + 1)] = i
-        if self.subcortical:
-            for j, aal_position in enumerate(idx):
-                aal_value = int(self.atlas_aal.indices[aal_position])
-                roi_volume[atlas_data_aal == aal_value] = 400 + j
-        self._roi_volume = roi_volume
-        return roi_volume
-
-    def _create_nifti_map_from_shap(self, shap_values, output_file: str, zscore: bool = False, save: bool = True):
-        """Paint one value per ROI into a 3D (481 values) or 4D (25 x 481 values) NIfTI image.
-
-        Args:
-            shap_values: array of shape (481,) or (25, 481)
-            output_file: path of the .nii.gz file
-            zscore: z-score the values before painting
-            save: if False, return the image instead of writing it
-        """
-        atlas_data_schaeffer, _, affine, _ = self._get_atlas()
-
-        # Normalize SHAP values
-        norm_values = scipy_zscore(shap_values) if zscore else shap_values
-        print(f"SHAP values shape: {norm_values.shape}")
-        norm_values = norm_values.reshape((1, 481)) if norm_values.ndim == 1 else norm_values.reshape((25, 481))
-
-        # Fill volume (vectorised lookup, identical to looping over the 481 ROIs)
-        roi_volume = self._get_roi_volume()
-        inside = roi_volume >= 0
-        volume = np.zeros(atlas_data_schaeffer.shape + (len(norm_values),), dtype=atlas_data_schaeffer.dtype)
-        volume[inside] = np.asarray(norm_values, dtype=volume.dtype)[:, roi_volume[inside]].T
-        
-        # Create and save NIfTI
-        if len(norm_values) == 1:
-            volume = volume[..., 0]
-        nifti_img = nib.Nifti1Image(volume, affine)
-        if not save:
-            return nifti_img
-        nib.save(nifti_img, output_file)
-        return output_file
-    
-    # HEATMAP
 
     def generate_heatmap(self, pop: str = "val", contours: int = 0, smoothing: bool = True, delta_rating: bool = False, only_concerned_block: bool = False):
         """
@@ -436,30 +311,31 @@ class Visualization:
                 plt.close()
         return matrix_pred_rate_time,  matrix_labels_rate_time, matrix_aucs_rate_time, matrix_shap_rate_time
 
-    def generate_corr_network_heatmap(self, pop: str = "val", label: int = 0, interpolation: str = "none", only_concerned_block: bool = False):
-        """*Legacy* (not used in the paper; does not run as is: ``corr`` is 1-D but normalised along axis 2)."""
+    def generate_network_heatmap(self, pop: str = "val", label: int = 0, interpolation: str = "none", only_concerned_block: bool = False, normalize_time: bool = False):
+        """Heatmap (time x network) of the mean |SHAP| projected on the 18 network templates.
+
+        Each block's SHAP map (481 ROIs) is L2-normalised, then projected on the L2-normalised
+        templates of ``external/schaeffer_subcortical_smith_templates.csv``.
+        """
         base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "external")
         network = pd.read_csv(f"{base_dir}/schaeffer_subcortical_smith_templates.csv")
         data, prediction, labels, id1, id2, rate, scores = self._get_predictions(pop, "block")
         id1, id2, rate = np.array(id1), np.array(id2), np.array(rate)
 
-        # Shap value
+        weights = network.iloc[:, 1:].to_numpy()
+        weights = weights / np.sqrt(np.sum(weights ** 2, axis=1, keepdims=True))
         shap_vals = self.shap_vals if pop == "val" else self.shap_test
         mask = np.argmax(softmax(labels.numpy().sum(1), axis=-1), axis=-1) == label
         shap_vals = shap_vals[mask] if only_concerned_block else shap_vals
         nblocks = (16*int(label==0)+10*int(label==1)+8*int(label==2)) if only_concerned_block else 34
-        shap_vals = shap_vals.reshape(-1, nblocks, 25, 481, 3)
+        shap_vals = shap_vals.reshape(-1, 25, 481, 3)
 
-        # Correlation
-        corr = np.zeros(481)
-        for i in range(481):
-            corr[i] = spearmanr(np.abs(shap_vals)[:, :, :, i, label].mean(axis=(1,2))).statistic
-
-        # Dot product
-        x_norm = corr / np.sqrt(np.sum(corr ** 2, axis=2, keepdims=True))
-        weights = network.iloc[:, 1:].to_numpy()
-        weights = weights / np.sqrt(np.sum(weights ** 2, axis=1, keepdims=True))
-        x_network = np.dot(x_norm, weights)
+        x_norm = shap_vals / np.sqrt(np.sum(shap_vals ** 2, axis=2, keepdims=True))
+        # Project each map on the templates along the ROI axis (x_norm.reshape(-1, 481) on an
+        # array of shape (..., 481, 3) mixed ROIs and conditions)
+        x_network = np.einsum("...rc,kr->...kc", x_norm, weights).reshape(-1, 25, 18, 3)
+        x_network = ((x_network - x_network.min(axis=1, keepdims=True)) / (x_network.max(axis=1, keepdims=True) - x_network.min(axis=1, keepdims=True))) if normalize_time else x_network
+        x_network = np.abs(x_network[:, :, :, label]).mean(axis=0)
         max_x = x_network.max()
 
         sort = np.argsort(x_network.mean(axis=0))
@@ -487,63 +363,12 @@ class Visualization:
         plt.savefig(f'{base_dir}/heatmap_ShapNetwork_condition-{self.conditions[label]}.png')
         plt.close()
 
-    def generate_network_heatmap(self, pop: str = "val", label: int = 0, interpolation: str = "none", only_concerned_block: bool = False, use_network: bool = True, normalize_time: bool = False):
-        """Heatmap (time x network) of the mean |SHAP| projected on the 18 network templates.
-
-        Each block's SHAP map (481 ROIs) is L2-normalised, then projected on the L2-normalised
-        templates of ``external/schaeffer_subcortical_smith_templates.csv``.
-        """
-        base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "external")
-        network = pd.read_csv(f"{base_dir}/schaeffer_subcortical_smith_templates.csv")
-        data, prediction, labels, id1, id2, rate, scores = self._get_predictions(pop, "block")
-        id1, id2, rate = np.array(id1), np.array(id2), np.array(rate)
-
-        weights = network.iloc[:, 1:].to_numpy()
-        weights = weights / np.sqrt(np.sum(weights ** 2, axis=1, keepdims=True))
-        shap_vals = self.shap_vals if pop == "val" else self.shap_test
-        mask = np.argmax(softmax(labels.numpy().sum(1), axis=-1), axis=-1) == label
-        shap_vals = shap_vals[mask] if only_concerned_block else shap_vals
-        nblocks = (16*int(label==0)+10*int(label==1)+8*int(label==2)) if only_concerned_block else 34
-        shap_vals = shap_vals.reshape(-1, 25, 481, 3)
-
-        x_norm = shap_vals / np.sqrt(np.sum(shap_vals ** 2, axis=2, keepdims=True))
-        x_network = np.matmul(x_norm.reshape(-1, 481), weights.T).reshape(-1, 25, 18, 3)
-        x_network = ((x_network - x_network.min(axis=1, keepdims=True)) / (x_network.max(axis=1, keepdims=True) - x_network.min(axis=1, keepdims=True))) if normalize_time else x_network
-        x_network = x_network if use_network else shap_vals
-        x_network = np.abs(x_network[:, :, :, label]).mean(axis=0)
-        max_x = x_network.max()
-
-        sort = np.argsort(x_network.mean(axis=0))
-        #sort = np.flip(sort)
-
-        x_network = x_network[:, sort]
-
-        fig = plt.figure(figsize=(12, 10))
-        ax = fig.add_subplot()
-
-        # Create main heatmap
-        im = ax.imshow(x_network.T, origin='lower', cmap="Reds", aspect='auto', vmax=max_x, vmin=0, interpolation=interpolation)
-            
-        plt.title(f'Shap Network Heatmap - {self.conditions[label]}')
-        cbar = plt.colorbar(im, label=f'Shap Network Value', ax=ax)
-        
-        plt.xlim(-.5, 23.5)
-        plt.xticks(np.linspace(-.5, 23.5, 25), np.linspace(-10, 14, 25))
-        plt.yticks(np.linspace(0, 17, 18), network.iloc[sort, 0].tolist()) if use_network else plt.yticks(np.linspace(0, 480, 481), self.roi_names)
-        plt.xlabel('Time (TR)')
-        plt.ylabel("Shap Network")
-        plt.tight_layout()
-        pop_name = "validation" if pop=="val" else "test"
-        base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name, "predictions", pop_name, "heatmap")
-        plt.savefig(f'{base_dir}/heatmap_ShapNetwork_condition-{self.conditions[label]}.png')
-        plt.close()
-
     def generate_diffnetwork_heatmap(self, pop: str = "val", slabels: list = [0,1], interpolation: str = "none", only_concerned_block: bool = False):
         """Difference of the network |SHAP| heatmaps of two conditions (``slabels``).
 
-        NB (to check): SHAP values are reshaped to 5-D (subject, block, time, ROI, condition)
-        here, so ``axis=2`` below normalises over *time*, whereas ``generate_network_heatmap``
-        (4-D array) normalises each map over the *ROIs*.
+        SHAP values are reshaped to 5-D (subject, block, time, ROI, condition), so ``axis=2``
+        below normalises each ROI time course over the 25 TR of the block (whereas
+        ``generate_network_heatmap`` normalises each map over the ROIs).
         """
         base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "external")
         network = pd.read_csv(f"{base_dir}/schaeffer_subcortical_smith_templates.csv")
@@ -560,7 +385,9 @@ class Visualization:
         shap_vals = shap_vals.reshape(-1, nblocks, 25, 481, 3)
 
         x_norm = shap_vals / np.sqrt(np.sum(shap_vals ** 2, axis=2, keepdims=True))
-        x_network = np.matmul(x_norm.reshape(-1, 481), weights.T).reshape(-1, 25, 18, 3)
+        # Project each map on the templates along the ROI axis (x_norm.reshape(-1, 481) on an
+        # array of shape (..., 481, 3) mixed ROIs and conditions)
+        x_network = np.einsum("...rc,kr->...kc", x_norm, weights).reshape(-1, 25, 18, 3)
         x_network_1 = np.abs(x_network[:, :, :, slabels[0]])
         x_network_2 = np.abs(x_network[:, :, :, slabels[1]])
         x_network = (x_network_1-x_network_2).mean(axis=0)
@@ -591,297 +418,12 @@ class Visualization:
         plt.savefig(f'{base_dir}/heatmap_DiffShapNetwork_condition-{self.conditions[slabels[0]]}-{self.conditions[slabels[1]]}.png')
         plt.close()
 
-    # PREDICTIONS
-
-    def visualize_subject(self, idx: int = 0, step: str = "val"):
-        """
-        Visualize predictions for a specific subject.
-        
-        Args:
-            idx: Index of the sample (subject for the "full" windows)
-            step: "val", "test" or "pred" (legacy resting state)
-        """
-        self.step = step
-        self.idx = idx
-
-        # Get predictions and prepare data
-        if step == "val" or step == "test":
-            data = self._get_validation_subject_data()
-        elif step == "pred":
-            data = self._get_resting_state_subject_data()
-        else:
-            raise ValueError(f"{step} not implemented")
-
-        # Plot if enabled
-        if self.plot:
-            if step == "val" or step == "test":
-                self._plot_validation_subject(data)
-            else:
-                self._plot_resting_state_subject(data)
-
-        return data
-
-    def _get_validation_subject_data(self):
-        """Get validation subject data with ground truth and ratings"""
-        results = self._get_predictions(self.step)
-        x, yh, y, id1, id2, r, m = results  # data, predictions, labels, ...
-
-        return {
-            'input': x[self.idx].numpy(),
-            'predictions': yh[self.idx].numpy(),
-            'ground_truth': y[self.idx].numpy(),
-            'ratings': r[self.idx],
-            'subject_id1': id1[self.idx],
-            'subject_id2': id2[self.idx],
-            'time_points': y.size(1)
-        }
-
-    def _get_resting_state_subject_data(self):
-        """Get resting state subject data"""
-        result = self._get_predictions("pred")
-        x, yh, id1, id2, m = result
-        
-        return {
-            'input': x[self.idx].numpy(),
-            'predictions': yh[self.idx].numpy(),
-            'subject_id1': id1[self.idx],
-            'subject_id2': id2[self.idx],
-            'time_points': x.size(1)
-        }
-
-    def _plot_validation_subject(self, data):
-        """Plot validation subject data with ground truth and ratings"""
-        # Create subplot grid            
-        fig = plt.figure(figsize=(24, 12))
-        gs = plt.GridSpec(3, 1, height_ratios=[1, 1, 1])
-
-        time = range(data['time_points'])
-
-        # Predictions plot
-        ax1 = fig.add_subplot(gs[0])
-        self._plot_predictions(ax1, data['predictions'], time, data['time_points'])
-
-        # Ground truth plot
-        ax2 = fig.add_subplot(gs[1])
-        self._plot_ground_truth(ax2, data['ground_truth'], time, data['time_points'])
-
-        # Rate plot
-        ax3 = fig.add_subplot(gs[2])
-        self._plot_rate(ax3, data['ratings'], time, data['time_points'])
-
-        # Add MAE loss title
-        mae_loss = self.mae_loss(torch.tensor(data['predictions']), torch.tensor(data['ground_truth']))
-        fig.suptitle(f"MAE Loss: {mae_loss.item():.4f}", fontsize=16)
-
-        self._finalize_plot(data['time_points'], 
-                          f"idx-{self.idx}_sub-{data['subject_id1']}_ses-{data['subject_id2']}", 
-                          self.step)
-
-    def _plot_resting_state_subject(self, data):
-        """Plot resting state subject data"""            
-        time = range(data['time_points'])
-        fig, ax = plt.subplots(figsize=(15, 5))
-        self._plot_predictions(ax, data['predictions'], time, data['time_points'])
-        self._finalize_plot(data['time_points'], 
-                          f"idx-{self.idx}_sub-{data['subject_id1']}_ses-{data['subject_id2']}", 
-                          "restingstate")
-
-    def _plot_predictions(self, ax, predictions, time, end_time):
-        """Plot model predictions"""
-        ax.plot(time, predictions[:end_time, 0], 'b--', label='W pred')
-        ax.plot(time, predictions[:end_time, 1], 'g--', label='N pred')
-        ax.plot(time, predictions[:end_time, 2], 'r--', label='R pred')
-        ax.set_title('Model Predictions')
-        ax.legend()
-
-    def _plot_ground_truth(self, ax, y, time, end_time):
-        """Plot ground truth values"""
-        ax.plot(time, y[:end_time, 0], 'b-', label='W')
-        ax.plot(time, y[:end_time, 1], 'g-', label='N')
-        ax.plot(time, y[:end_time, 2], 'r-', label='R')
-        ax.set_title('Ground Truth')
-        ax.legend()
-
-    def _plot_rate(self, ax, rate, time, end_time):
-        """Plot rating values"""
-        ax.plot(time, rate[:end_time], 'b--', label='Rate')
-        ax.set_title('Rate')
-        ax.legend()
-
-    def _finalize_plot(self, end_time, idx, step):
-        """Finalize and save the plot"""
-        plt.xlabel('Time (s)')
-        plt.tight_layout()
-        if self.step == "val":
-            step = "validation"
-        elif self.step == "test":
-            step = "test"
-        elif self.step == "pred":
-            step = "restingstate"
-        base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name, "predictions", step)
-        plt.savefig(f"{base_dir}/prediction-{step}_{idx}.png")
-        plt.show()
-        plt.close()
-
-    # SCORES
-
-    def analyze_clinical_patterns(self):
-        """*Legacy* resting-state analysis (not used in the paper; needs the removed resting-state module)."""
-        # Get resting state predictions
-        data, predictions, id1, id2 = self._get_predictions(step="pred")
-        predictions = predictions.numpy()
-        n_subjects, end_time, _ = data.size()
-
-        # Create base dataframe with predictions
-        df = pd.DataFrame(predictions.reshape(-1, 3), columns=["Worry", "Neutral", "Reappraisal"])
-        df["timepoint"] = np.tile(np.arange(end_time), n_subjects)
-        df["subject_id"] = np.repeat(np.arange(n_subjects), end_time)
-        df["subject_id1"] = np.repeat(id1, end_time)
-        df["subject_id2"] = np.repeat(id2, end_time)
-        df["WorryOrNeutral"] = (df["Worry"] > df["Neutral"]).astype(int)
-
-        # Calculate metrics per subject
-        df_subjects = self._calculate_subject_metrics(df)
-        
-        # Load and merge clinical data
-        df_subjects = self._merge_clinical_data(df_subjects)
-        
-        # Create clinical correlation plots
-        self._plot_clinical_correlations(df_subjects)
-        
-        # Analyze state transitions
-        self._analyze_state_transitions(df, df_subjects)
-
-    def _calculate_subject_metrics(self, df):
-        """Calculate various metrics for each subject"""
-        return (df.groupby(['subject_id1', 'subject_id2'])
-         .agg(
-             # Basic probability metrics
-             probability=('WorryOrNeutral', lambda x: x.sum()/x.count()),
-             surprise=('WorryOrNeutral', lambda x: np.log2(1/(x.sum()/x.count()))), 
-             entropy=('WorryOrNeutral', lambda x: -np.sum((x.sum()/x.count())*np.log2(x.sum()/x.count()))),
-             max_duration=('WorryOrNeutral', lambda x: (np.max(np.diff(np.where(np.r_[1, x, 1] == 0))[::2]) - 1)),
-             
-             # Average activation values
-             mean_worry=('Worry', 'mean'),
-             mean_neutral=('Neutral', 'mean'),
-             mean_reapp=('Reappraisal', 'mean'),
-             
-             # Variability metrics
-             std_worry=('Worry', 'std'),
-             std_neutral=('Neutral', 'std'),
-             std_reapp=('Reappraisal', 'std')
-         )
-         .reset_index())
-
-    def _merge_clinical_data(self, df_subjects):
-        """Merge clinical data with subject metrics"""
-        fina = pd.read_csv(os.path.join(self.full_dataset_trainvaltest.base_dir, "FINA", "Public", "Analysis", "misc", "FINA_2023_01_06.csv"))
-        return pd.merge(fina, df_subjects, 
-                       left_on=["Vault_UID", "Vault_ScanID"], 
-                       right_on=['subject_id1', 'subject_id2'], 
-                       how='inner')
-
-    def _plot_clinical_correlations(self, df_subjects):
-        """Create correlation plots between metrics and clinical measures"""
-        clinical_measures = ["pswq_total", "rsq_total", "madrs_total", "hars_score"]
-        metric_groups = {
-            'probability': ["probability", "surprise", "entropy", "max_duration"],
-            'activation': ["mean_worry", "mean_neutral", "mean_reapp"],
-            'variability': ["std_worry", "std_neutral", "std_reapp"]
-        }
-        
-        import seaborn as sns
-        
-        for measure in clinical_measures:
-            for group_name, metrics in metric_groups.items():
-                fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-                axes = axes.flatten()
-                
-                for i, metric in enumerate(metrics[:4]):  # Limit to 4 metrics per plot
-                    sns.regplot(data=df_subjects, x=metric, y=measure, 
-                              robust=True, ax=axes[i])
-                    axes[i].set_xlabel(metric.replace('_', ' ').title())
-                    
-                    # Calculate and display correlation
-                    corr = df_subjects[metric].corr(df_subjects[measure])
-                    axes[i].set_title(f'r = {corr:.3f}')
-                
-                plt.suptitle(f'{measure.upper()} vs {group_name.title()} Metrics')
-                plt.tight_layout()
-                base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name, "clinical", "scores")
-                plt.savefig(f"{base_dir}/{measure}_{group_name}_correlations.png")
-                plt.close()
-
-    def _analyze_state_transitions(self, df, df_subjects):
-        """Analyze state transitions and their clinical correlations"""
-        # Calculate transition probabilities
-        df_transitions = (df.groupby(['subject_id1', 'subject_id2'])
-         .agg(
-             pzto=('WorryOrNeutral', lambda x: len(np.where((x.to_numpy()[:-1] == 0) & (x.to_numpy()[1:] == 1))[0])/(x.count()-x.sum())),
-             pztz=('WorryOrNeutral', lambda x: len(np.where((x.to_numpy()[:-1] == 0) & (x.to_numpy()[1:] == 0))[0])/(x.count()-x.sum())),
-             potz=('WorryOrNeutral', lambda x: len(np.where((x.to_numpy()[:-1] == 1) & (x.to_numpy()[1:] == 0))[0])/x.sum()),
-             poto=('WorryOrNeutral', lambda x: len(np.where((x.to_numpy()[:-1] == 1) & (x.to_numpy()[1:] == 1))[0])/x.sum()),
-         )
-         .reset_index())
-        
-        # Merge with clinical data
-        df_transitions = self._merge_clinical_data(df_transitions)
-        
-        # Plot transition probabilities vs clinical measures
-        clinical_measures = ["pswq_total", "rsq_total", "madrs_total", "hars_score"]
-        transitions = {
-            'pzto': 'Probability to get Worry',
-            'pztz': 'Probability to stay Neutral',
-            'potz': 'Probability to get Neutral',
-            'poto': 'Probability to stay Worry'
-        }
-
-        import seaborn as sns
-        
-        for measure in clinical_measures:
-            fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-            axes = axes.flatten()
-            
-            for i, (trans_key, trans_label) in enumerate(transitions.items()):
-                sns.regplot(data=df_transitions, x=trans_key, y=measure, 
-                          robust=True, ax=axes[i])
-                axes[i].set_xlabel(trans_label)
-                
-                # Calculate and display correlation
-                corr = df_transitions[trans_key].corr(df_transitions[measure])
-                axes[i].set_title(f'r = {corr:.3f}')
-            
-            plt.suptitle(f'{measure.upper()} vs State Transitions')
-            plt.tight_layout()
-            base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name, "clinical", "scores")
-            plt.savefig(f"{base_dir}/{measure}_transitions.png")
-            plt.close()
-    
-    # METRICS ACCURACY BLOCK        
+    # METRICS
 
     def loss_compute(self, population: str = "val", presentation: str = "block"):
-        _, labels, prediction, _, _, _, _ = self._get_predictions(population, presentation)
+        """Mean absolute error between predictions and rescaled task regressors."""
+        _, prediction, labels, _, _, _, _ = self._get_predictions(population, presentation)
         return self.mae_loss(prediction, labels)
-
-    def _separate_populations(self, id1: np.array, cutoff: int) -> Tuple[List[int], List[int], List[int]]:
-        """Separate subjects into RAW, FINA, and common populations."""
-        dataset = self.block_dataset_trainvaltest.test_dataset
-        raw_only_ids, fina_only_ids, common_ids = [], [], []
-        
-        for i, subject_id in enumerate(id1):
-            raw_id = dataset.is_fina_in_raw(subject_id)
-            fina_id = dataset.is_raw_in_fina(subject_id)
-            if raw_id is None and fina_id is None:
-                if i >= cutoff:
-                    common_ids.append(i)
-            else:
-                if i < cutoff:
-                    fina_only_ids.append(i)
-                else:
-                    raw_only_ids.append(i)
-        
-        return raw_only_ids, fina_only_ids, common_ids
 
     def _calculate_binary_metrics(self, y_true: np.array, y_pred: np.array, 
                                 y_pred_proba: np.array) -> Dict[str, float]:
@@ -971,25 +513,6 @@ class Visualization:
                 metric_values[i][pop_name]["mae"] = round(self.mae_loss(y_hat[pop_ids, :, :].reshape(-1, 3), y[pop_ids, :, :].reshape(-1, 3)).item(), 2)
         return metric_values
 
-    def _calculate_individual_metrics(self, y: np.array, y_hat: np.array, 
-                                    population_ids: Dict[str, List[int]], population_subs: Dict[str, List[str]]) -> Dict[str, Dict[str, np.ndarray]]:
-        """Calculate metrics for each population."""
-        metric_values = [self._initialize_metric_arrays(population_subs) for i in range(len(self._comparisons))]
-        
-        for pop_name, pop_ids in population_ids.items():
-            for j, subject_id in enumerate(list(set(population_subs[pop_name]))):
-                subj_idx_sub = pop_ids[np.array(population_subs[pop_name]) == subject_id]
-                metrics = self._calculate_metrics_for_block(
-                    y[subj_idx_sub, :25, :].reshape(-1, 3),
-                    y_hat[subj_idx_sub, :25, :].reshape(-1, 3)
-                )
-            
-                for i, comparison in enumerate(self._comparisons):
-                    for metric_name in self.metric_config.names:
-                        metric_values[i][pop_name][metric_name][j] = metrics[comparison][metric_name]
-        
-        return metric_values
-
     def visualize_roc_metrics_rates(self, type: str = "block", threshold: int = 0, asc = 0, delta: bool = True) -> list:
         """Classification metrics (AUC, sensitivity, specificity, PPV, NPV, LR+, LR-, MAE) per population.
 
@@ -1073,60 +596,3 @@ class Visualization:
 
         return metric_values
 
-    # BRAIN
-
-    def analyze_brain_attributions(self, pop: str = "val", threshold: float = 0.3):
-        """Brain maps of the mean |SHAP| per condition and of the contrasts between conditions.
-
-        Writes NIfTI maps (3D: mean over blocks and time; 4D: one volume per TR), interactive
-        HTML viewers and, if ``threshold`` is not None, one glass brain per TR thresholded at
-        that quantile.
-        """
-        shap_values = self.shap_vals if pop == "val" else self.shap_test
-        from nilearn import plotting
-        
-        # Process each condition
-        for i, condition in enumerate(self.conditions):
-            print(f"Processing {condition} condition...")
-            # Same seq time point SHAP values over time dimension
-            mean_shap = np.abs(shap_values[..., i]).mean(axis=0).mean(axis=0)
-            
-            # Create and save brain map
-            base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "results", self.name, "maps")
-            output_file = f"{base_dir}/nifti/{condition.lower()}_map.nii.gz"
-            self._create_nifti_map_from_shap(mean_shap, output_file)
-            
-            # Create interactive HTML visualization
-            html = plotting.view_img(output_file, cmap=plt.get_cmap("Reds"), vmax=mean_shap.max(), vmin=0)
-            html.save_as_html(f"{base_dir}/plot/{condition.lower()}_map.html")
-
-            mean_shap = np.abs(shap_values[:, :, :, i]).mean(axis=0)
-            output_file = f"{base_dir}/nifti/{condition.lower()}_map_4d.nii.gz"
-            self._create_nifti_map_from_shap(mean_shap, output_file)
-            if threshold is not None:
-                for t in range(25):
-                    img = self._create_nifti_map_from_shap(mean_shap[t, :], output_file, save=False)
-                    plotting.plot_glass_brain(img, threshold=np.quantile(mean_shap, threshold))
-                    plt.title(f"{condition} - Time {t}")
-                    plt.savefig(f"{base_dir}/plot/{condition.lower()}_map_time-{t}.png")
-                    plt.close()
-
-        # Process contrasts
-        print("Processing contrasts...")
-        for idx1, idx2, name in self.contrasts:
-            contrast_vals = self._calculate_contrast(shap_values, idx1, idx2)
-            max_contrast_vals = np.abs(contrast_vals).max()
-            
-            output_file = f"{base_dir}/nifti/{name}_map.nii.gz"
-            self._create_nifti_map_from_shap(contrast_vals, output_file)
-            
-            html = plotting.view_img(output_file, cmap=plt.get_cmap("seismic"), vmax=max_contrast_vals, vmin=-max_contrast_vals)
-            html.save_as_html(f"{base_dir}/plot/{name}_map.html")
-
-    def _calculate_contrast(self, shap_values, idx1, idx2):
-        """Mean |SHAP| of condition idx1 minus condition idx2, per ROI (481,)"""
-        # Same result as (np.abs(shap_values)[..., idx1] - np.abs(shap_values)[..., idx2]),
-        # without materialising |SHAP| for the 3 conditions twice (memory)
-        return (
-            (np.abs(shap_values[:, :, :, idx1])-np.abs(shap_values[:, :, :, idx2])).mean(axis=0).mean(axis=0)
-        )

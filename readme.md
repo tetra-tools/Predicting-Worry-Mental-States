@@ -17,6 +17,7 @@ regions and networks that drive the predictions.
 - [Data](#data)
 - [Installation](#installation)
 - [Reproducing the results](#reproducing-the-results)
+- [Re-running the analyses of the paper](#re-running-the-analyses-of-the-paper)
 - [Repository structure](#repository-structure)
 - [Model](#model)
 - [Notes and limitations](#notes-and-limitations)
@@ -58,7 +59,7 @@ The task has 34 blocks of 35 s starting at 10 s (16 Worry, 10 Neutral, 8 Reappra
 Cohort 2 (TR = 0.7 s) is resampled to 1 s. The `responses*.mat` files contain the
 in-scanner worry ratings (1-5).
 
-Atlas files are listed in [`external/README.md`](external/README.md).
+The network templates used by the analyses are described in [`external/README.md`](external/README.md).
 
 ## Installation
 
@@ -69,8 +70,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Then download the AAL3 atlas into `external/` (see [`external/README.md`](external/README.md)) and,
-if your data are not on the original storage:
+Then, if your data are not on the original storage:
 
 ```bash
 export WORRY_DATA_ROOT=/path/to/Studies
@@ -120,30 +120,71 @@ after setting the checkpoint path in their first cells:
 
 | Notebook | Content |
 |---|---|
-| `results_article.ipynb` | performance (MAE, AUC, sensitivity, specificity, PPV, NPV, LR+/LR-), effect of the in-scanner ratings, SHAP brain maps, network heatmaps, SHAP–clinical correlations, sample description |
-| `networks.ipynb` | dominant network over time, network transitions, by worry severity, age and sex |
+| `results_article.ipynb` | performance (MAE, AUC, sensitivity, specificity, PPV, NPV, LR+/LR-), AUC within the block, effect of the in-scanner ratings, SHAP network heatmaps, SHAP–clinical correlations, sample description |
 | `create_R_data.ipynb` | exports metrics and SHAP summaries to `results/` for the R figures |
-| `create_roi.ipynb` | images of the 18 network templates |
 
 All the analysis code is in [`visualization/base.py`](visualization/base.py)
 (`Visualization` class). Predictions are cached in `results/<name>/predictions/`;
-figures and brain maps (NIfTI and interactive HTML) are written to `results/<name>/`.
+heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
+
+### 4. Statistical analyses (R)
+
+[`R/Article.Rmd`](R/Article.Rmd) contains the mixed-effects models (block-wise MAE of
+cohort 2; SMA network attributions), the per-participant AUCs, the timing of the SHAP
+attributions and the network figures. Knit it from the `R/` folder: it reads the
+per-time-point exports `R/data/export_{train,val,test}_{training,block,full}.csv` and
+`R/data/export_{val,test}_block_with_shap.csv` (labels, predictions, ratings, clinical
+scores and SHAP values per ROI and per network) written by `export_R_data.py`, and writes
+the figures to `R/plots/`.
+
+## Re-running the analyses of the paper
+
+`rerun_paper_analyses.sh` regenerates the exports and all the figures of the R analyses
+from the trained model and the SHAP values already computed (neither is recomputed):
+
+```bash
+bash rerun_paper_analyses.sh                 # checks, exports (R/data/), R analyses (R/plots/)
+RUN_NOTEBOOK=1 bash rerun_paper_analyses.sh  # also executes visualization/results_article.ipynb
+```
+
+Files to provide:
+
+| File | Location | Used for |
+|---|---|---|
+| Published checkpoint `model_best_score=val_loss=0.1113.ckpt` | `checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/` | predictions |
+| 38 SHAP files `shap-lstmv4vf_pop-val_batch-{0..7}.npz` and `shap-lstmv4vf_pop-test_batch-{0..29}.npz` | `results/lstmv4vlt/predictions/shap/` | SHAP columns of the exports |
+| 6 window caches `cache_data-TASK_{FINA,RAW}_size-{20_sample-100,25_sample-34,1190_sample-1}_roi-wSubcortical_seed-123.pt` | `cached_data/` | the same windows as in the paper (the 100 random windows per participant can only be reproduced from them) |
+| `common_file.csv` | repository root | participants enrolled in both cohorts |
+| `FINA_2025_01_17.csv` | `$WORRY_DATA_ROOT/FINA/Public/Analysis/misc/` (or `WORRY_FINA_CLINICAL_CSV`) | clinical variables of cohort 1 |
+| `RAW_JY_Data_Request_2.10.25.csv` | path given by `WORRY_RAW_CLINICAL_CSV` | clinical variables of cohort 2 |
+| *Optional:* cached predictions `model_best_score=val_loss=0.1113_sub-true_type-*_step-*_n-all.pt` | `results/lstmv4vlt/predictions/` | faster (recomputed from the checkpoint otherwise) |
+| *Optional:* previous exports `export_*.csv` | `R/data/` (moved to `R/data_previous/` and checked) | `tools/check_network_projection.py`, `R/check_auc_direction.R` |
+| *Only if a cache is missing:* time series and `responses*.mat` | `$WORRY_DATA_ROOT` (see [Data](#data)) | rebuilding the cache |
+
+The script stops if the checkpoint, `common_file.csv` or one of the 38 SHAP files is
+missing. `export_R_data.py` writes the exports (`R/data/export_*.csv`, network attributions
+projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots/`.
 
 ## Repository structure
 
 ```
 ├── main.py                  training
 ├── main_shap.py             SHAP attributions (DeepExplainer)
+├── export_R_data.py         per-time-point exports read by R/Article.Rmd
+├── rerun_paper_analyses.sh  exports + R analyses from the trained model and SHAP values
 ├── config.py                data paths (environment variables)
 ├── models/lstm_v4.py        LSTM classifier (PyTorch Lightning)
 ├── datasets/
 │   ├── TimeSeriesDataset.py     windows, labels, ratings and clinical scores (+ cache)
 │   └── TimeSeriesDataModule.py  subject-level train/validation split, test cohort
 ├── visualization/
-│   ├── base.py              metrics, brain maps, heatmaps
+│   ├── base.py              metrics and heatmaps
 │   └── *.ipynb              analyses of the paper
-├── utils/                   AAL3 loader, NaN check
-└── external/                network templates (+ AAL3 atlas to download)
+├── R/Article.Rmd            mixed-effects models, per-participant AUCs, SHAP figures
+├── R/check_auc_direction.R  effect of pROC's automatic direction on previous exports
+├── tools/check_network_projection.py  which projection produced the network columns of an export
+├── utils/                   NaN check
+└── external/                network templates
 ```
 
 ## Model
@@ -170,8 +211,6 @@ onset), the whole run, and the random 20 s training windows.
 - `shap.DeepExplainer` has no specific rule for `LSTM` and `LayerNorm` modules (it warns
   about them and `check_additivity` is disabled); attributions explain the prediction at
   the last time point of each 25 s block window.
-- Methods of `visualization/base.py` marked *legacy* (resting-state predictions,
-  clinical patterns) were exploratory and are not used in the paper.
 - The identifiers of the participants are parsed from the file paths, so
   `WORRY_DATA_ROOT` must not contain runs of digits such as `9xxxxx` or `1xxx`.
 

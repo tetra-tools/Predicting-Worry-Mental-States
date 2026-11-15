@@ -102,8 +102,11 @@ class TimeSeriesDataset(Dataset):
             # The cache name does not include rate_output: a cache written with rate_output=False
             # (e.g. by main.py or main_shap.py) holds zero ratings. Recompute the ratings of the
             # cached windows from the .mat files (deterministic; the windows are unchanged).
-            if self.rate_output and not cached_data.get('rate_output', False):
-                self._recompute_rates()
+            # Caches written before this flag existed are recomputed only if all ratings are zero.
+            built_with_rates = cached_data.get('rate_output')
+            if self.rate_output and built_with_rates is not True:
+                if built_with_rates is False or self._cached_rates_empty():
+                    self._recompute_rates()
         else:
             # Get all file paths
             self.get_data(database, task, subcortical_file)
@@ -291,6 +294,10 @@ class TimeSeriesDataset(Dataset):
         folder = "WorryInduction/behavioral_data" if "FINA" in self.set else "WorryTask"
         return str(file_path).replace(f"{task}/{subcortical_file}", f"converted/{folder}/responses*.mat")
 
+    def _cached_rates_empty(self) -> bool:
+        """True if every cached rating is zero or empty (cache written with rate_output=False)."""
+        return all(not float(torch.nan_to_num(sample['rate']).abs().sum()) for sample in self.samples)
+
     def _recompute_rates(self):
         """Fill the 'rate' of the cached samples, exactly as ``_preprocess_and_cache`` does."""
         print("Cached data has no ratings: recomputing them from the .mat files")
@@ -301,6 +308,9 @@ class TimeSeriesDataset(Dataset):
             # Ratings only depend on the block onsets; the array only needs to cover the windows
             n_timepoints = max(s['start_idx'] + s['features'].shape[0] for s in samples)
             rates = self._preprocess_matlab_data(self._ratings_glob(file_path), n_timepoints)
+            if not isinstance(rates, np.ndarray):
+                raise FileNotFoundError(f"No ratings file matching {self._ratings_glob(file_path)}: "
+                                        "cannot fill the ratings of the cached windows")
             for sample in samples:
                 start = sample['start_idx']
                 sample['rate'] = torch.FloatTensor(rates[start:start + sample['features'].shape[0]])

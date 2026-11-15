@@ -1,0 +1,460 @@
+---
+title: "Article"
+output: html_document
+date: "2025-09-26"
+---
+
+```{r setup, include=FALSE}
+# Package installation and loading
+required_packages <- c('readr', 'ggpubr', 'stringr', 'gtsummary', 'flextable', 
+                       'dplyr', 'tidyr', 'scales', 'pROC', 'ggstatsplot', 
+                       'ggeffects', 'ggimage', 'cowplot', 'ggsci', 'lme4', 'lmerTest',
+                       'pals', 'forcats')
+
+for (name in required_packages) {
+  if (!require(name, character.only = TRUE)) {
+    install.packages(name, dep = TRUE)
+    if (!require(name, character.only = TRUE)) stop("Package not found")
+  }
+}
+
+# Figures are written to plots/ (ggsave does not create the folder)
+dir.create("plots", showWarnings = FALSE)
+```
+
+```{r functions}
+# Function to load and combine datasets
+load_and_combine <- function(path_prefix, seq_length_label) {
+  df_val <- read_csv(paste0(path_prefix, "_val_", seq_length_label, ".csv"))
+  df_test <- read_csv(paste0(path_prefix, "_test_", seq_length_label, ".csv"))
+  df_train <- read_csv(paste0(path_prefix, "_train_", seq_length_label, ".csv"))
+  
+  df_combined <- rbind(df_val, df_test, df_train)
+  df_combined$seq_length <- seq_length_label
+  return(df_combined)
+}
+
+# Function to prepare plotting variables
+prepare_plot_vars <- function(df) {
+  df$`Sequence Length` <- factor(df$seq_length, 
+                                  levels = c("training", "block", "full"),
+                                  labels = c("20s random sequence", "25s task synchronized", "Full sequence"))
+  
+  df$`Population` <- factor(df$split, 
+                            levels = c("train", "val", "test"),
+                            labels = c("FINA: training set", "FINA: test set", "RAW independent set"))
+  
+  df <- df %>%
+    mutate(
+      true_class = case_when(
+        pmax(label_worry, label_neutral, label_reappraisal) == label_worry ~ "worry",
+        pmax(label_worry, label_neutral, label_reappraisal) == label_neutral ~ "neutral", 
+        pmax(label_worry, label_neutral, label_reappraisal) == label_reappraisal ~ "reappraisal"
+      ),
+      # Absolute errors
+      wae = abs(pred_worry - label_worry),
+      nae = abs(pred_neutral - label_neutral),
+      rae = abs(pred_reappraisal - label_reappraisal),
+      aae = (wae + nae + rae) / 3
+    )
+  
+  return(df)
+}
+
+# Function to calculate AUCs safely
+# The direction is fixed (higher prediction = positive class): with pROC's default
+# direction = "auto", the direction is chosen per subject from the medians, so a
+# subject below chance gets 1 - AUC.
+safe_auc <- function(response, predictor, quiet = TRUE) {
+  tryCatch({
+    as.numeric(auc(response, predictor, levels = c(FALSE, TRUE), direction = "<", quiet = quiet))
+  }, error = function(e) NA_real_)
+}
+
+# Function to find local maxima with constraints
+find_local_maxima <- function(x, y, n_max = 3, min_distance = 5) {
+  if(length(y) < 3) return(data.frame())
+  
+  peaks <- which(diff(sign(diff(y))) == -2) + 1
+  peaks <- c(peaks, length(y))
+  
+  if(length(peaks) == 0) return(data.frame())
+  
+  peak_values <- y[peaks]
+  sorted_peaks <- peaks[order(peak_values, decreasing = TRUE)]
+  
+  selected_peaks <- c()
+  for(peak in sorted_peaks) {
+    if(length(selected_peaks) >= n_max) break
+    if(length(selected_peaks) == 0 || all(abs(x[peak] - x[selected_peaks]) >= min_distance)) {
+      selected_peaks <- c(selected_peaks, peak)
+    }
+  }
+  
+  data.frame(
+    timepoint = x[selected_peaks],
+    shap_value = y[selected_peaks]
+  )
+}
+
+# Function to prepare SHAP network data
+prepare_shap_network_data <- function(df, class_label, split_filter = "test", times_max_threshold = 0.1, ids = NULL) {
+  shap_col_pattern <- paste0("shap_network_", class_label)
+  
+  plot_data <- df %>%
+    filter(split == split_filter) %>%
+    mutate(
+      true_class = case_when(
+        pmax(label_worry, label_neutral, label_reappraisal) == label_worry ~ "worry",
+        pmax(label_worry, label_neutral, label_reappraisal) == label_neutral ~ "neutral", 
+        pmax(label_worry, label_neutral, label_reappraisal) == label_reappraisal ~ "reappraisal"
+      )
+    ) %>%
+    filter(class_label == "" | true_class == class_label) %>%
+    select(id1, id2, timepoint, contains(shap_col_pattern), rate, pswq_total, age, sex, hars_score, rsq_total, true_class) %>%
+    pivot_longer(cols = contains(shap_col_pattern), 
+                 names_to = "network", 
+                 values_to = "shap_value") %>%
+    group_by(id1, id2, timepoint) %>%
+    mutate(
+      network = gsub(shap_col_pattern, "", network), 
+      shap_value = abs(shap_value), 
+      timepoint = timepoint + 1,
+      shap_value_scaled = (shap_value - min(shap_value)) / (max(shap_value) - min(shap_value))
+    ) %>%
+    ungroup() %>%
+    group_by(network, timepoint) %>%
+    mutate(mean_shap = mean(shap_value_scaled, na.rm = TRUE)) %>%
+    ungroup() %>%
+    group_by(timepoint) %>%
+    mutate(is_max_mean = mean_shap == max(mean_shap, na.rm = TRUE)) %>%
+    ungroup() %>%
+    group_by(network) %>%
+    mutate(times_max = mean(is_max_mean)) %>%
+    ungroup() 
+  
+  if (is.null(ids)) {
+    plot_data <- plot_data %>%
+      filter(times_max >= times_max_threshold)
+  }
+  else{
+    top_networks <- plot_data %>%
+      distinct(network, times_max) %>%
+      arrange(desc(times_max)) %>%
+      slice(ids) %>%
+      pull(network)
+    
+    plot_data <- plot_data %>%
+      filter(network %in% top_networks)
+  }
+  
+  return(plot_data)
+}
+```
+
+```{r data_loading}
+# Load all datasets
+df_block <- load_and_combine("./data/export", "block")
+df_full <- load_and_combine("./data/export", "full")
+df_training <- load_and_combine("./data/export", "training")
+
+# Combine all datasets
+df <- rbind(df_training, df_block, df_full)
+
+# Load SHAP data
+df_val_block_with_shap <- read_csv("./data/export_val_block_with_shap.csv")
+df_test_block_with_shap <- read_csv("./data/export_test_block_with_shap.csv")
+df_block_withshap <- rbind(df_val_block_with_shap, df_test_block_with_shap)
+
+# Clean environment
+rm(list = setdiff(ls(), c("df", "df_block_withshap", lsf.str())))
+
+# Prepare data
+df <- prepare_plot_vars(df)
+
+if(!"true_class" %in% colnames(df_block_withshap)) {
+  df_block_withshap <- df_block_withshap %>%
+    mutate(
+      true_class = case_when(
+        pmax(label_worry, label_neutral, label_reappraisal) == label_worry ~ "worry",
+        pmax(label_worry, label_neutral, label_reappraisal) == label_neutral ~ "neutral", 
+        pmax(label_worry, label_neutral, label_reappraisal) == label_reappraisal ~ "reappraisal"
+      )
+    )
+}
+```
+
+```{r lmer_analysis, fig.height=14, fig.width=6}
+# Calculate blockwise MAE
+mae_data <- df %>%
+  filter(seq_length == "block", split == "test") %>%
+  group_by(id1, block_id) %>%
+  summarise(
+    mae = mean(abs(aae), na.rm = TRUE),
+    rating = (first(rating)-1)/(5-1),
+    pswq_total = (first(pswq_total)-16)/(80-16),
+    rsq_total = (first(rsq_total)-22)/(88-22),
+    hars_score = first(hars_score)/56,
+    true_class = first(true_class),
+    age = (first(age)-50)/50,
+    sex = first(sex),
+    common_id = first(common_id),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Sex = factor(sex, levels = c(1, 2), labels = c("Male", "Female")),
+    Class = factor(true_class, 
+                   levels = c("neutral", "worry", "reappraisal"),
+                   labels = c("Neutral", "Worry", "Reappraisal")),
+    Age = age,
+    PSWQ = pswq_total,
+    RSQ = rsq_total,
+    HARS = hars_score,
+    Rating = rating,
+    Subject = id1
+  )
+
+# Run mixed effects model
+mae_data$common_id <- is.na(mae_data$common_id)
+model <- lmer(mae ~ Age + Sex + PSWQ + RSQ + Rating + Rating*Class + RSQ*Class + HARS*Class + 
+              PSWQ*Class + Sex*Class + Age*Class + Class + HARS + common_id + (1|Subject),
+              data = mae_data)
+
+summary(model)
+anova(model)
+g <- ggcoefstats(model, effects = "fixed", digits="signif3", exclude.intercept=TRUE, 
+            sort="ascending", only.significant=TRUE, xlab = "Estimate", ylab = "Terms")
+
+ggsave("plots/figure_model_mae.png", plot = g, width = 4, height = 12, dpi = 300)
+g
+```
+
+```{r mae_plots, fig.height=10, fig.width=15}
+tmp <- df %>% 
+  gather("ae_type", "ae_value", aae, wae, nae, rae) %>%
+  mutate(Condition = factor(ae_type, 
+                           levels = c("aae", "wae", "nae", "rae"),
+                           labels = c("Overall", "Worry", "Neutral", "Reappraisal")))
+
+g_overall <- grouped_ggbetweenstats(
+  data = tmp[tmp$Condition == "Overall",],
+  x = `Sequence Length`,
+  y = ae_value,
+  grouping.var = Population,
+  pairwise.display = "none",
+  plotgrid.args = list(nrow = 1, ncol = 3),
+  results.subtitle = FALSE,
+  ggplot.component = list(
+    scale_y_continuous(trans = "log10"),
+    ylab("Absolute error (log10 scale)")
+  )
+)
+
+ggsave("plots/figure_mae_overall.png", plot = g_overall, width = 15, height = 6, dpi = 300)
+```
+
+```{r shap_temporal, fig.height=5, fig.width=8}
+tmp <- df_block_withshap %>%
+  mutate(
+    timepoint = as.numeric(timepoint) + 1,
+    shap_all = rowMeans(select(., starts_with("shap_")) %>% select(-starts_with("shap_network")) %>% abs(), na.rm = TRUE) %>% 
+      rescale(to = c(0, 1)),
+    shap_worry = rowMeans(select(., starts_with("shap_roi_worry_")) %>% abs(), na.rm = TRUE) %>% 
+                 rescale(to = c(0, 1)),
+    shap_neutral = rowMeans(select(., starts_with("shap_roi_neutral_")) %>% abs(), na.rm = TRUE) %>% 
+                   rescale(to = c(0, 1)),
+    shap_reappraisal = rowMeans(select(., starts_with("shap_roi_reappraisal_")) %>% abs(), na.rm = TRUE) %>% 
+                       rescale(to = c(0, 1))
+  ) %>% 
+  gather("shap_condition", "shap_value", shap_worry, shap_neutral, shap_reappraisal, shap_all) %>%
+  mutate(
+    Condition = factor(shap_condition, 
+                      levels = c("shap_all", "shap_worry", "shap_neutral", "shap_reappraisal"),
+                      labels = c("Overall", "Worry", "Neutral", "Reappraisal")),
+    Population = factor(split, 
+                       levels = c("train", "val", "test"),
+                       labels = c("FINA: training set", "FINA: test set", "RAW independent set"))
+  ) %>%
+  select(timepoint, shap_value, Condition, Population)
+
+mean_data <- tmp %>%
+  group_by(Population, Condition, timepoint) %>%
+  summarise(mean_shap = mean(shap_value, na.rm = TRUE), .groups = "drop")
+
+maxima_data <- mean_data %>%
+  group_by(Population, Condition) %>%
+  arrange(timepoint) %>%
+  do(find_local_maxima(.$timepoint, .$mean_shap, 3, 5)) %>%
+  ungroup()
+
+ggline(tmp, x = "timepoint", y = "shap_value", color = "Condition", add = "mean_ci", 
+       facet.by = "Population", numeric.x.axis = TRUE, palette = "lancet") + 
+  geom_point(data = maxima_data, aes(x = timepoint, y = shap_value + 0.005, color = Condition), 
+             shape = 8, size = 3) +
+  xlab("Time (s) task synchronized") +
+  ylab("smaShap") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1, size = 6))
+
+ggsave("plots/figure_timing.png", width = 8, height = 5, dpi = 300)
+```
+
+```{r auc_analysis, fig.height=10, fig.width=15}
+tmp <- df %>%
+  group_by(id1, id2, `Sequence Length`) %>%
+  mutate(
+    auc_worry_all = safe_auc(true_class == "worry", pred_worry),
+    auc_neutral_all = safe_auc(true_class == "neutral", pred_neutral),
+    auc_reappraisal_all = safe_auc(true_class == "reappraisal", pred_reappraisal),
+    auc_worry_neutral = safe_auc(true_class[true_class %in% c("worry", "neutral")] == "worry",
+                                pred_worry[true_class %in% c("worry", "neutral")]),
+    auc_worry_reappraisal = safe_auc(true_class[true_class %in% c("worry", "reappraisal")] == "worry",
+                                    pred_worry[true_class %in% c("worry", "reappraisal")]),
+    auc_neutral_reappraisal = safe_auc(true_class[true_class %in% c("neutral", "reappraisal")] == "neutral",
+                                      pred_neutral[true_class %in% c("neutral", "reappraisal")])
+  ) %>% 
+  gather("auc_type", "auc_value", auc_worry_all, auc_neutral_all, auc_reappraisal_all, 
+         auc_worry_neutral, auc_worry_reappraisal, auc_neutral_reappraisal) %>% 
+  group_by(id1, id2, `Sequence Length`, auc_type) %>%
+  summarise(Population = first(Population), auc_value = mean(auc_value, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Condition = factor(auc_type, 
+                           levels = c("auc_worry_all", "auc_neutral_all", "auc_reappraisal_all", 
+                                     "auc_worry_neutral", "auc_worry_reappraisal", "auc_neutral_reappraisal"),
+                           labels = c("Worry vs Rest", "Neutral vs Rest", "Reappraisal vs Rest", 
+                                     "Worry vs Neutral", "Worry vs Reappraisal", "Neutral vs Reappraisal")))
+
+grouped_ggbetweenstats(
+  data = tmp %>% filter(`Sequence Length` == "25s task synchronized"),
+  x = Population,
+  y = auc_value,
+  grouping.var = Condition,
+  type = "parametric",
+  pairwise.display = "significant",
+  results.subtitle = FALSE,
+  p.adjust.method = "holm",
+  centrality.plotting = TRUE,
+  ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"))  # zoom only: ylim() would drop AUCs < 0.5
+)
+ggsave("plots/figure_auc.png", width = 15, height = 10, dpi = 300)
+```
+
+
+```{r shap_summary}
+df_block_withshap %>%
+  filter(split == "test") %>%
+  select(id1, id2, true_class, timepoint, contains("shap_network_")) %>%
+  pivot_longer(contains("shap_network_"), names_to = "feature", values_to = "shap") %>%
+  mutate(
+    label = str_split_i(feature, "_", 3),
+    network = sub("^([^_]+_){3}", "", feature)
+  ) %>%
+  group_by(label, network) %>%
+  summarise(mean_abs_shap = mean(abs(shap), na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(label), desc(mean_abs_shap))
+```
+
+```{r fig.height=15, fig.width=5}
+plot_data <- prepare_shap_network_data(df_block_withshap, "", ids = 1:(18*3))
+
+plot_dan <- plot_data %>%
+    filter(str_detect(network, "SMA")) %>%
+    separate(network, into = c("shap_class", "network"), sep = "_", remove = FALSE) %>%
+    filter(str_detect(shap_class, "worry|neutral"), str_detect(true_class, "worry|neutral"), shap_class == true_class) %>%
+    mutate(
+      Class = factor(true_class),
+      Focus = factor(shap_class),
+      Sex = factor(sex, levels = c(1, 2), labels = c("Male", "Female")),
+      Age = (age-50)/50,
+      PSWQ = (pswq_total-16)/(80-16),
+      RSQ = (rsq_total-22)/(88-22),
+      HARS = hars_score/56,
+      Rating = (rate-1)/4,  # 0-1 like in the MAE model (was rate - 1/4)
+      Subject = id1
+    )
+model <- lmer(shap_value_scaled ~ Age + Sex + PSWQ + RSQ + HARS + Rating + Class + Class*Age + Class*Sex + Class*PSWQ + Class*RSQ + Class*HARS + Class*Rating  + (timepoint|Subject), data = plot_dan)
+
+summary(model)
+g <- ggcoefstats(model, effects = "fixed", digits="signif3", exclude.intercept=TRUE, 
+            sort="ascending", only.significant=TRUE, xlab = "Estimate", ylab = "Terms") 
+ggsave("plots/figure_model_sma.png", plot = g, width = 4, height = 12, dpi = 300)
+g
+```
+
+```{r shap_networks_reappraisal, fig.height=10, fig.width=12}
+colors <- pal_npg()(7)
+network_labels <- c(
+    "AnteriorHippocampus" = "Anterior Hippocampus",
+    "anteriorDMN" = "Anterior Default Mode Network",
+    "ASN" = "Anterior Salience Network",
+    "Auditory" = "Auditory Cortex",
+    "BasalGanglia" = "Basal Ganglia",
+    "BilateralInsula" = "Bilateral Insula",
+    "Cerebellum" = "Cerebellum",
+    "DAN" = "Dorsal Attention Network",
+    "FrontoLimbic" = "Frontolimbic Network",
+    "Fusiform" = "Fusiform Gyrus",
+    "left_ECN" = "Left Executive Control Network",
+    "Motor" = "Motor Cortex",
+    "PrimaryVisual" = "Primary Visual Cortex",
+    "posteriorDMN" = "Posterior Default Mode Network",
+    "right_ECN" = "Right Executive Control Network",
+    "SecondaryVisual" = "Secondary Visual Cortex",
+    "SMA" = "Supplementary Motor Network",
+    "ventralDMN" = "Ventral Default Mode Network"
+  )
+
+plot_data <- prepare_shap_network_data(df_block_withshap, "worry")
+plot_data <- rbind(plot_data, prepare_shap_network_data(df_block_withshap, "neutral"))
+plot_data <- rbind(plot_data, prepare_shap_network_data(df_block_withshap, "reappraisal"))
+
+plot_data <- plot_data %>%
+    mutate(network = factor(network_labels[as.character(str_replace(network, "_", ""))], levels = network_labels[c("AnteriorHippocampus", "DAN", "SMA", "Motor","PrimaryVisual","SecondaryVisual","Cerebellum")]), network_color = colors[as.numeric(network)], Class = factor(str_to_title(true_class)))
+
+col_vec <- setNames(unique(plot_data$network_color), unique(plot_data$network))
+ggline(plot_data, x = "timepoint", y = "shap_value_scaled", 
+       color = "network", add = "mean_ci", palette = col_vec, 
+       numeric.x.axis = TRUE, facet.by = "Class") + 
+  labs(x = "Time (s) task synchronized", y = "smaShap", colour = "Networks") +
+  facet_wrap(~Class, nrow = 2, ncol = 2) +
+  theme(legend.position = c(0.75, 0.25))
+ggsave("plots/figure_smaShap.png", width = 12, height = 10, dpi = 300)
+```
+```{r}
+library(pals)
+library(forcats) 
+colors <- polychrome(18)
+
+for (label in c("worry", "neutral", "reappraisal")){
+  plot_data <- prepare_shap_network_data(df_block_withshap, label, ids=1:18) %>%
+    mutate(
+      network = factor(network_labels[as.character(str_replace(network, "_", ""))], levels = network_labels),
+      network_color = colors[as.numeric(network)]
+    ) %>%
+    group_by(network) %>%
+    mutate(mean_abs_shap = mean(abs(shap_value_scaled))) %>%
+    ungroup() %>%
+    arrange(desc(mean_abs_shap)) %>%
+    mutate(
+      network = fct_inorder(network),
+      network_group = paste0('Group ', ntile(row_number(), 6))
+    )
+  
+  col_vec <- setNames(unique(plot_data$network_color), unique(plot_data$network))
+  
+  for(grp in 1:6){
+    p <- plot_data %>%
+      filter(network_group == paste("Group", grp)) %>%
+      ggline(x = "timepoint", y = "shap_value_scaled", color = "network", 
+             add = "mean_ci", palette = col_vec, numeric.x.axis = TRUE) + 
+      labs(x = "Time (s) task synchronized", y = "smaShap", 
+           colour = "Networks")
+    ggsave(paste0("plots/shap_", label, "_group", grp, ".png"), p, width = 8, height = 6)
+  }
+}
+```
+
+```{r eval=FALSE}
+# Load the resting-state predictions (not used; set eval=TRUE to load them)
+df_pred_fina_full_with_data <- read_csv("./data/export_pred_fina_full_with_data.csv")
+df_pred_raw_full_with_data <- read_csv("./data/export_pred_raw_full_with_data.csv")
+df_pred_withdata <- rbind(df_pred_fina_full_with_data, df_pred_raw_full_with_data)
+```
