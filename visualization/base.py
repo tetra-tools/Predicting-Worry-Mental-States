@@ -331,7 +331,9 @@ class Visualization:
         shap_vals = shap_vals.reshape(-1, 25, 481, 3)
 
         x_norm = shap_vals / np.sqrt(np.sum(shap_vals ** 2, axis=2, keepdims=True))
-        x_network = np.matmul(x_norm.reshape(-1, 481), weights.T).reshape(-1, 25, 18, 3)
+        # Project each map on the templates along the ROI axis (x_norm.reshape(-1, 481) on an
+        # array of shape (..., 481, 3) mixed ROIs and conditions)
+        x_network = np.einsum("...rc,kr->...kc", x_norm, weights).reshape(-1, 25, 18, 3)
         x_network = ((x_network - x_network.min(axis=1, keepdims=True)) / (x_network.max(axis=1, keepdims=True) - x_network.min(axis=1, keepdims=True))) if normalize_time else x_network
         x_network = np.abs(x_network[:, :, :, label]).mean(axis=0)
         max_x = x_network.max()
@@ -383,7 +385,9 @@ class Visualization:
         shap_vals = shap_vals.reshape(-1, nblocks, 25, 481, 3)
 
         x_norm = shap_vals / np.sqrt(np.sum(shap_vals ** 2, axis=2, keepdims=True))
-        x_network = np.matmul(x_norm.reshape(-1, 481), weights.T).reshape(-1, 25, 18, 3)
+        # Project each map on the templates along the ROI axis (x_norm.reshape(-1, 481) on an
+        # array of shape (..., 481, 3) mixed ROIs and conditions)
+        x_network = np.einsum("...rc,kr->...kc", x_norm, weights).reshape(-1, 25, 18, 3)
         x_network_1 = np.abs(x_network[:, :, :, slabels[0]])
         x_network_2 = np.abs(x_network[:, :, :, slabels[1]])
         x_network = (x_network_1-x_network_2).mean(axis=0)
