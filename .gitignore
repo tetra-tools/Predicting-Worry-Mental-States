@@ -9,7 +9,11 @@ results/
 
 # Exports read by R/Article.Rmd and its figures
 R/data/
+R/data_previous/
 R/plots/
+R/Article.html
+R/Article_files/
+*.executed.ipynb
 
 # Model checkpoints and experiment tracking
 checkpoints/

@@ -21,3 +21,9 @@ RAW_CLINICAL_CSV = os.environ.get(
     os.path.join("/mnt/argo/Workspaces", "Staff", "Jacques-Yves_Campion", "Public", "WorryInduction",
                  "RAW_JY_Data_Request_2.10.25.csv"),
 )
+
+# Clinical variables of cohort 1 used by export_R_data.py (PSWQ, RSQ, HARS, age, sex, ...).
+FINA_CLINICAL_CSV = os.environ.get(
+    "WORRY_FINA_CLINICAL_CSV",
+    os.path.join(DATA_ROOT, "FINA", "Public", "Analysis", "misc", "FINA_2025_01_17.csv"),
+)

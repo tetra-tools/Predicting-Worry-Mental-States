@@ -17,6 +17,7 @@ regions and networks that drive the predictions.
 - [Data](#data)
 - [Installation](#installation)
 - [Reproducing the results](#reproducing-the-results)
+- [Re-running the analyses of the paper](#re-running-the-analyses-of-the-paper)
 - [Repository structure](#repository-structure)
 - [Model](#model)
 - [Notes and limitations](#notes-and-limitations)
@@ -133,13 +134,44 @@ cohort 2; SMA network attributions), the per-participant AUCs, the timing of the
 attributions and the network figures. Knit it from the `R/` folder: it reads the
 per-time-point exports `R/data/export_{train,val,test}_{training,block,full}.csv` and
 `R/data/export_{val,test}_block_with_shap.csv` (labels, predictions, ratings, clinical
-scores and SHAP values per ROI and per network) and writes the figures to `R/plots/`.
+scores and SHAP values per ROI and per network) written by `export_R_data.py`, and writes
+the figures to `R/plots/`.
+
+## Re-running the analyses of the paper
+
+`rerun_paper_analyses.sh` regenerates the exports and all the figures of the R analyses
+from the trained model and the SHAP values already computed (neither is recomputed):
+
+```bash
+bash rerun_paper_analyses.sh                 # checks, exports (R/data/), R analyses (R/plots/)
+RUN_NOTEBOOK=1 bash rerun_paper_analyses.sh  # also executes visualization/results_article.ipynb
+```
+
+Files to provide:
+
+| File | Location | Used for |
+|---|---|---|
+| Published checkpoint `model_best_score=val_loss=0.1113.ckpt` | `checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/` | predictions |
+| 38 SHAP files `shap-lstmv4vf_pop-val_batch-{0..7}.npz` and `shap-lstmv4vf_pop-test_batch-{0..29}.npz` | `results/lstmv4vlt/predictions/shap/` | SHAP columns of the exports |
+| 6 window caches `cache_data-TASK_{FINA,RAW}_size-{20_sample-100,25_sample-34,1190_sample-1}_roi-wSubcortical_seed-123.pt` | `cached_data/` | the same windows as in the paper (the 100 random windows per participant can only be reproduced from them) |
+| `common_file.csv` | repository root | participants enrolled in both cohorts |
+| `FINA_2025_01_17.csv` | `$WORRY_DATA_ROOT/FINA/Public/Analysis/misc/` (or `WORRY_FINA_CLINICAL_CSV`) | clinical variables of cohort 1 |
+| `RAW_JY_Data_Request_2.10.25.csv` | path given by `WORRY_RAW_CLINICAL_CSV` | clinical variables of cohort 2 |
+| *Optional:* cached predictions `model_best_score=val_loss=0.1113_sub-true_type-*_step-*_n-all.pt` | `results/lstmv4vlt/predictions/` | faster (recomputed from the checkpoint otherwise) |
+| *Optional:* previous exports `export_*.csv` | `R/data/` (moved to `R/data_previous/` and checked) | `tools/check_network_projection.py`, `R/check_auc_direction.R` |
+| *Only if a cache is missing:* time series and `responses*.mat` | `$WORRY_DATA_ROOT` (see [Data](#data)) | rebuilding the cache |
+
+The script stops if the checkpoint, `common_file.csv` or one of the 38 SHAP files is
+missing. `export_R_data.py` writes the exports (`R/data/export_*.csv`, network attributions
+projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots/`.
 
 ## Repository structure
 
 ```
 ├── main.py                  training
 ├── main_shap.py             SHAP attributions (DeepExplainer)
+├── export_R_data.py         per-time-point exports read by R/Article.Rmd
+├── rerun_paper_analyses.sh  exports + R analyses from the trained model and SHAP values
 ├── config.py                data paths (environment variables)
 ├── models/lstm_v4.py        LSTM classifier (PyTorch Lightning)
 ├── datasets/
@@ -149,6 +181,8 @@ scores and SHAP values per ROI and per network) and writes the figures to `R/plo
 │   ├── base.py              metrics and heatmaps
 │   └── *.ipynb              analyses of the paper
 ├── R/Article.Rmd            mixed-effects models, per-participant AUCs, SHAP figures
+├── R/check_auc_direction.R  effect of pROC's automatic direction on previous exports
+├── tools/check_network_projection.py  which projection produced the network columns of an export
 ├── utils/                   NaN check
 └── external/                network templates
 ```
