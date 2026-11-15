@@ -8,7 +8,8 @@ date: "2025-09-26"
 # Package installation and loading
 required_packages <- c('readr', 'ggpubr', 'stringr', 'gtsummary', 'flextable', 
                        'dplyr', 'tidyr', 'scales', 'pROC', 'ggstatsplot', 
-                       'ggeffects', 'ggimage', 'cowplot', 'ggsci', 'lme4', 'lmerTest')
+                       'ggeffects', 'ggimage', 'cowplot', 'ggsci', 'lme4', 'lmerTest',
+                       'pals', 'forcats')
 
 for (name in required_packages) {
   if (!require(name, character.only = TRUE)) {
@@ -16,6 +17,9 @@ for (name in required_packages) {
     if (!require(name, character.only = TRUE)) stop("Package not found")
   }
 }
+
+# Figures are written to plots/ (ggsave does not create the folder)
+dir.create("plots", showWarnings = FALSE)
 ```
 
 ```{r functions}
@@ -446,7 +450,7 @@ for (label in c("worry", "neutral", "reappraisal")){
 ```
 
 ```{r}
-# Load SHAP data
+# Load the resting-state predictions (not used below)
 df_pred_fina_full_with_data <- read_csv("./data/export_pred_fina_full_with_data.csv")
 df_pred_raw_full_with_data <- read_csv("./data/export_pred_raw_full_with_data.csv")
 df_pred_withdata <- rbind(df_pred_fina_full_with_data, df_pred_raw_full_with_data)
