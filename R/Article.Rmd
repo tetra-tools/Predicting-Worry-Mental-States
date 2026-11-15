@@ -452,8 +452,8 @@ for (label in c("worry", "neutral", "reappraisal")){
 }
 ```
 
-```{r}
-# Load the resting-state predictions (not used below)
+```{r eval=FALSE}
+# Load the resting-state predictions (not used; set eval=TRUE to load them)
 df_pred_fina_full_with_data <- read_csv("./data/export_pred_fina_full_with_data.csv")
 df_pred_raw_full_with_data <- read_csv("./data/export_pred_raw_full_with_data.csv")
 df_pred_withdata <- rbind(df_pred_fina_full_with_data, df_pred_raw_full_with_data)
