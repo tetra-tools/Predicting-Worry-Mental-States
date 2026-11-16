@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Re-run the analyses of the paper affected by the pre-submission review
-# (per-participant AUC direction, network projection of the SHAP values, SMA model scale).
+# (per-participant AUC direction, network projection of the SHAP values, SMA model scale,
+# block-level normalisation of the SHAP maps, rank vs amount of the network attributions,
+# participant-level confidence intervals, additivity of the SHAP values).
 #
 # Needs the files listed in readme.md, "Re-running the analyses of the paper".
 # Neither the model, the SHAP values nor the predictions are recomputed: every result comes
@@ -56,6 +58,11 @@ fi
 echo "== 2. Exports for the R analyses (R/data/)"
 python export_R_data.py --checkpoint "$CKPT" --name "$NAME" --out R/data
 python tools/check_network_projection.py R/data/export_test_block_with_shap.csv "$TEMPLATES"
+# Additivity of the SHAP values (sum of the attributions vs prediction - background mean)
+for pop in val test; do
+  python tools/check_shap_additivity.py --pop "$pop" --name "$NAME" --checkpoint "$CKPT" \
+    --out "R/data/check_shap_additivity_$pop.csv" || echo "additivity check failed for $pop (left out)"
+done
 
 echo "== 3. R analyses (figures in R/plots/, report R/Article.html)"
 (cd R && Rscript -e 'rmarkdown::render("Article.Rmd")')

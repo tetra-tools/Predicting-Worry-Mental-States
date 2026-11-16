@@ -161,6 +161,23 @@ per-time-point exports `R/data/export_{train,val,test}_{training,block,full}.csv
 scores and SHAP values per ROI and per network) written by `export_R_data.py`, and writes
 the figures to `R/plots/`.
 
+Network attributions ([`utils/network.py`](utils/network.py)):
+
+- **Normalisation.** The SHAP map of each block and condition (25 time points x 481 ROIs)
+  is L2-normalised over time *and* ROIs, then projected on each L2-normalised template along
+  the ROI axis. One normalisation per block keeps how much each second contributes to the
+  prediction explained (last time point of the block); the previous normalisation of each
+  time point separately (`--normalization timepoint` of `export_R_data.py`) gave every second
+  the same weight.
+- **Amount and rank.** `prepare_shap_network_data` returns the absolute projection
+  (`shap_value`, the amount: the curves) and its min-max across the networks within each
+  block and second (`shap_rank`: the selection and the order of the networks in the figures,
+  and the SMA model). Scaling block by block makes the rank independent of the number of
+  blocks of a condition (16 Worry, 10 Neutral, 8 Reappraisal per participant); pooling the
+  blocks of a participant had compressed the Worry values.
+- **Confidence intervals.** The curves average the blocks of each participant first, so the
+  95 % confidence intervals are computed across participants, not across blocks.
+
 ### 5. Brain maps of the networks (Figure 4)
 
 The right part of Figure 4 shows the templates of the selected networks (those of the
@@ -230,8 +247,10 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── R/Article.Rmd            mixed-effects models, per-participant AUCs, SHAP figures
 ├── R/check_auc_direction.R  effect of pROC's automatic direction on previous exports
 ├── tools/check_network_projection.py  which projection produced the network columns of an export
+├── tools/check_shap_additivity.py   do the SHAP values add up to the predictions (no cache needed)
+├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer on a few participants
 ├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
-├── utils/                   NaN check
+├── utils/                   NaN check, network projection of the SHAP values (network.py)
 └── external/                network templates
 ```
 
@@ -258,7 +277,16 @@ onset), the whole run, and the random 20 s training windows.
 - Training was run on CPU; `--use_gpu` only lowers the number of CPU threads.
 - `shap.DeepExplainer` has no specific rule for `LSTM` and `LayerNorm` modules (it warns
   about them and `check_additivity` is disabled); attributions explain the prediction at
-  the last time point of each 25 s block window.
+  the last time point of each 25 s block window. Two checks need neither the window caches
+  nor a new SHAP run: `tools/check_shap_additivity.py` (SHAP files and block predictions;
+  run by `rerun_paper_analyses.sh`) tests whether the attributions add up to the
+  predictions, and `tools/compare_explainers.py` (also the checkpoint) recomputes the
+  attributions of a few participants with `shap.GradientExplainer` from the inputs stored
+  in the block prediction files and compares the ROI maps and network orders.
+- The order of the networks partly depends on the spatial extent of their templates: on a
+  first set of curves, compact templates (SMA, auditory, visual) ranked higher than
+  extended ones (right executive control, anterior salience), Spearman rho about -0.5.
+  Compare a network across conditions or seconds rather than networks with each other.
 - The identifiers of the participants are parsed from the file paths, so
   `WORRY_DATA_ROOT` must not contain runs of digits such as `9xxxxx` or `1xxx`.
 

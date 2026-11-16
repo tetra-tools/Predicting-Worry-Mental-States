@@ -26,6 +26,7 @@ from sklearn.metrics import auc, confusion_matrix, roc_curve
 import torch
 import numpy as np
 from config import COMMON_FILE, PREDICTIONS_DIR, RECOMPUTE_PREDICTIONS, SHAP_DIR
+from utils.network import load_templates, network_projection
 from datasets.TimeSeriesDataModule import TimeSeriesDataModule
 from models.lstm_v4 import LSTMClassifier
 from typing import Dict, List, Optional
@@ -333,29 +334,27 @@ class Visualization:
                 plt.close()
         return matrix_pred_rate_time,  matrix_labels_rate_time, matrix_aucs_rate_time, matrix_shap_rate_time
 
-    def generate_network_heatmap(self, pop: str = "val", label: int = 0, interpolation: str = "none", only_concerned_block: bool = False, normalize_time: bool = False):
+    def generate_network_heatmap(self, pop: str = "val", label: int = 0, interpolation: str = "none", only_concerned_block: bool = False, normalize_time: bool = False, normalization: str = "block"):
         """Heatmap (time x network) of the mean |SHAP| projected on the 18 network templates.
 
-        Each block's SHAP map (481 ROIs) is L2-normalised, then projected on the L2-normalised
-        templates of ``external/schaeffer_subcortical_smith_templates.csv``.
+        Each block's SHAP map is L2-normalised (``normalization``: "block" over time and ROIs,
+        "timepoint" over the ROIs of each time point, see ``utils.network.normalize_shap``),
+        then projected on the L2-normalised templates of
+        ``external/schaeffer_subcortical_smith_templates.csv``.
         """
         base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "external")
-        network = pd.read_csv(f"{base_dir}/schaeffer_subcortical_smith_templates.csv")
+        network_names, _, weights = load_templates(f"{base_dir}/schaeffer_subcortical_smith_templates.csv")
         data, prediction, labels, id1, id2, rate, scores = self._get_predictions(pop, "block")
         id1, id2, rate = np.array(id1), np.array(id2), np.array(rate)
 
-        weights = network.iloc[:, 1:].to_numpy()
-        weights = weights / np.sqrt(np.sum(weights ** 2, axis=1, keepdims=True))
         shap_vals = self.shap_vals if pop == "val" else self.shap_test
         mask = np.argmax(softmax(labels.numpy().sum(1), axis=-1), axis=-1) == label
         shap_vals = shap_vals[mask] if only_concerned_block else shap_vals
-        nblocks = (16*int(label==0)+10*int(label==1)+8*int(label==2)) if only_concerned_block else 34
         shap_vals = shap_vals.reshape(-1, 25, 481, 3)
 
-        x_norm = shap_vals / np.sqrt(np.sum(shap_vals ** 2, axis=2, keepdims=True))
-        # Project each map on the templates along the ROI axis (x_norm.reshape(-1, 481) on an
-        # array of shape (..., 481, 3) mixed ROIs and conditions)
-        x_network = np.einsum("...rc,kr->...kc", x_norm, weights).reshape(-1, 25, 18, 3)
+        # Projection along the ROI axis (an earlier x_norm.reshape(-1, 481) on an array of shape
+        # (..., 481, 3) mixed ROIs and conditions)
+        x_network = network_projection(shap_vals, weights, normalization)   # (blocks, 25, 18, 3)
         x_network = ((x_network - x_network.min(axis=1, keepdims=True)) / (x_network.max(axis=1, keepdims=True) - x_network.min(axis=1, keepdims=True))) if normalize_time else x_network
         x_network = np.abs(x_network[:, :, :, label]).mean(axis=0)
         max_x = x_network.max()
@@ -376,7 +375,7 @@ class Visualization:
         
         plt.xlim(-.5, 23.5)
         plt.xticks(np.linspace(-.5, 23.5, 25), np.linspace(-10, 14, 25))
-        plt.yticks(np.linspace(0, 17, 18), network.iloc[sort, 0].tolist())
+        plt.yticks(np.linspace(0, 17, 18), [network_names[i] for i in sort])
         plt.xlabel('Time (TR)')
         plt.ylabel("Shap Network")
         plt.tight_layout()
@@ -385,31 +384,25 @@ class Visualization:
         plt.savefig(f'{base_dir}/heatmap_ShapNetwork_condition-{self.conditions[label]}.png')
         plt.close()
 
-    def generate_diffnetwork_heatmap(self, pop: str = "val", slabels: list = [0,1], interpolation: str = "none", only_concerned_block: bool = False):
+    def generate_diffnetwork_heatmap(self, pop: str = "val", slabels: list = [0,1], interpolation: str = "none", only_concerned_block: bool = False, normalization: str = "block"):
         """Difference of the network |SHAP| heatmaps of two conditions (``slabels``).
 
-        SHAP values are reshaped to 5-D (subject, block, time, ROI, condition), so ``axis=2``
-        below normalises each ROI time course over the 25 TR of the block (whereas
-        ``generate_network_heatmap`` normalises each map over the ROIs).
+        Same normalisation and projection as ``generate_network_heatmap`` (previously, the
+        SHAP values were reshaped to 5-D and ``axis=2`` normalised each ROI time course over
+        the 25 TR of the block instead).
         """
         base_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "external")
-        network = pd.read_csv(f"{base_dir}/schaeffer_subcortical_smith_templates.csv")
+        network_names, _, weights = load_templates(f"{base_dir}/schaeffer_subcortical_smith_templates.csv")
         data, prediction, labels, id1, id2, rate, scores = self._get_predictions(pop, "block")
         id1, id2, rate = np.array(id1), np.array(id2), np.array(rate)
 
-        weights = network.iloc[:, 1:].to_numpy()
-        weights = weights / np.sqrt(np.sum(weights ** 2, axis=1, keepdims=True))
         shap_vals = self.shap_vals if pop == "val" else self.shap_test
         mask0 = np.argmax(softmax(labels.numpy().sum(1), axis=-1), axis=-1) == slabels[0]
         mask1 = np.argmax(softmax(labels.numpy().sum(1), axis=-1), axis=-1) == slabels[1]
         shap_vals = shap_vals[np.logical_or(mask0, mask1)] if only_concerned_block else shap_vals
-        nblocks = (16*int(0 in slabels)+10*int(1 in slabels)+8*int(2 in slabels)) if only_concerned_block else 34
-        shap_vals = shap_vals.reshape(-1, nblocks, 25, 481, 3)
+        shap_vals = shap_vals.reshape(-1, 25, 481, 3)
 
-        x_norm = shap_vals / np.sqrt(np.sum(shap_vals ** 2, axis=2, keepdims=True))
-        # Project each map on the templates along the ROI axis (x_norm.reshape(-1, 481) on an
-        # array of shape (..., 481, 3) mixed ROIs and conditions)
-        x_network = np.einsum("...rc,kr->...kc", x_norm, weights).reshape(-1, 25, 18, 3)
+        x_network = network_projection(shap_vals, weights, normalization)   # (blocks, 25, 18, 3)
         x_network_1 = np.abs(x_network[:, :, :, slabels[0]])
         x_network_2 = np.abs(x_network[:, :, :, slabels[1]])
         x_network = (x_network_1-x_network_2).mean(axis=0)
@@ -431,7 +424,7 @@ class Visualization:
         
         plt.xlim(-.5, 23.5)
         plt.xticks(np.linspace(-.5, 23.5, 25), np.linspace(-10, 14, 25))
-        plt.yticks(np.linspace(0, 17, 18), network.iloc[sort, 0].tolist())
+        plt.yticks(np.linspace(0, 17, 18), [network_names[i] for i in sort])
         plt.xlabel('Time (TR)')
         plt.ylabel("Shap Network")
         plt.tight_layout()
