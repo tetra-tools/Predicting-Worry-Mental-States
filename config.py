@@ -67,6 +67,11 @@ RAW_CLINICAL_CSV = _path(
 RAW_PHENO_CSV = _path(
     "WORRY_RAW_PHENO_CSV", os.path.join(RECOVERY_ROOT, "clinical", "pheno_raw.csv"))
 
+# Recompute a missing prediction file from the window caches (WORRY_RECOMPUTE_PREDICTIONS=1).
+# Off by default: without the original caches, the random 20 TR windows and the train/val split
+# differ from the paper, so a missing file raises an error instead.
+RECOMPUTE_PREDICTIONS = os.environ.get("WORRY_RECOMPUTE_PREDICTIONS", "0") == "1"
+
 # Root folder containing the time series of the two cohorts (only to rebuild a cache):
 #   <WORRY_DATA_ROOT>/FINA/Public/Analysis/data/9xxxxx/8xxxxx/step02_WorryInduction/  (cohort 1)
 #   <WORRY_DATA_ROOT>/RAW/Public/Analysis/data/1xxx/1xxx/step05_worry/                (cohort 2)

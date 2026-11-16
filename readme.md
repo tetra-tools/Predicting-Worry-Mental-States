@@ -94,7 +94,8 @@ export WANDB_MODE=offline   # optional: train without a Weights & Biases account
 
 Single files can also be moved with `WORRY_CHECKPOINT`, `WORRY_SHAP_DIR`, `WORRY_CACHE_DIR`,
 `WORRY_PREDICTIONS_DIR`, `WORRY_COMMON_FILE`, `WORRY_FINA_CLINICAL_CSV`,
-`WORRY_RAW_CLINICAL_CSV`, `WORRY_RAW_PHENO_CSV` and `WORRY_FINA_SCORES_CSV`. Relative paths are
+`WORRY_RAW_CLINICAL_CSV`, `WORRY_RAW_PHENO_CSV` and `WORRY_FINA_SCORES_CSV`;
+`WORRY_RECOMPUTE_PREDICTIONS=1` recomputes missing predictions. Relative paths are
 taken from the repository root.
 
 ## Reproducing the results
@@ -146,7 +147,8 @@ they read the checkpoint and the other inputs from `config.py`:
 | `create_R_data.ipynb` | exports metrics and SHAP summaries to `results/` for the R figures |
 
 All the analysis code is in [`visualization/base.py`](visualization/base.py)
-(`Visualization` class). Predictions are cached in `$WORRY_PREDICTIONS_DIR/<name>/`;
+(`Visualization` class). Predictions are cached in `$WORRY_PREDICTIONS_DIR/<name>/` (a missing
+file is recomputed only with `WORRY_RECOMPUTE_PREDICTIONS=1`);
 heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
 
 ### 4. Statistical analyses (R)
@@ -177,8 +179,10 @@ options file, e.g. `BrainNet_MapCfg('cerebellum.nv', 'Cerebellum.nii', 'options.
 
 ## Re-running the analyses of the paper
 
-`rerun_paper_analyses.sh` regenerates the exports and all the figures of the R analyses
-from the trained model and the SHAP values already computed (neither is recomputed):
+`rerun_paper_analyses.sh` regenerates the exports and the figures of the R analyses from
+the cached predictions and the SHAP values already computed. Neither the model, the SHAP
+values nor the predictions are recomputed, and no window cache is needed: an analysis whose
+prediction file is missing is left out (listed at the start of the run).
 
 ```bash
 bash rerun_paper_analyses.sh                 # checks, exports (R/data/), R analyses (R/plots/)
@@ -189,19 +193,23 @@ Files to provide (folders relative to `$WORRY_RECOVERY_ROOT`, see [Data](#data))
 
 | File | Location | Used for |
 |---|---|---|
-| Published checkpoint `model_best_score=val_loss=0.1113.ckpt` | `checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/` | predictions |
+| Published checkpoint `model_best_score=val_loss=0.1113.ckpt` | `checkpoints/lstm_v4_host-smp-n217.crc.pitt.edu_version3/` | loading the model |
 | 38 SHAP files `shap-lstmv4vf_pop-val_batch-{0..7}.npz` and `shap-lstmv4vf_pop-test_batch-{0..29}.npz` | `shap/` | SHAP columns of the exports |
-| 6 window caches `cache_data-TASK_{FINA,RAW}_size-{20_sample-100,25_sample-34,1190_sample-1}_roi-wSubcortical_seed-123.pt` | `cached_data/` | the same windows as in the paper (the 100 random windows per participant can only be reproduced from them) |
+| 3 block predictions `model_best_score=val_loss=0.1113_sub-true_type-block_step-{train,val,test}_n-all.pt` | `predictions/lstmv4vlt/` | Figures 1-5, Supplementary Figures 2-4 |
 | `common_file.csv` | `./` | participants enrolled in both cohorts |
 | `FINA_2025_01_17.csv` | `clinical/` | clinical variables of cohort 1 |
 | `RAW_JY_Data_Request_2.10.25.csv` | `clinical/` | clinical variables of cohort 2 |
 | *For `RUN_NOTEBOOK=1`:* `pheno_raw.csv` | `clinical/` | education of cohort 2 (sample description) |
-| *Optional:* 9 cached predictions `model_best_score=val_loss=0.1113_sub-true_type-{training,block,full}_step-{train,val,test}_n-all.pt` | `predictions/lstmv4vlt/` | faster (recomputed from the checkpoint otherwise) |
+| *Optional:* the 6 other predictions `..._type-{training,full}_step-{train,val,test}_n-all.pt` | `predictions/lstmv4vlt/` | 20 s and full-run windows (Supplementary Figure 1, AUC tables); with the validation files only, these windows are compared on the validation set (`figure_auc_val_windows.png`, `figure_mae_overall_val_windows.png`) |
 | *Optional:* previous exports `export_*.csv` | `R/data/` of the repository (moved to `R/data_previous/` and checked) | `tools/check_network_projection.py`, `R/check_auc_direction.R` |
-| *Only if a cache is missing:* time series, `responses*.mat`, `FINA_2023_01_06.csv` | `$WORRY_DATA_ROOT` | rebuilding the cache |
 
-The script stops if the checkpoint, `common_file.csv`, a clinical file or one of the 38
-SHAP files is missing. `export_R_data.py` writes the exports (`R/data/export_*.csv`, network attributions
+The script stops if the checkpoint, `common_file.csv`, a clinical file, one of the 38 SHAP
+files or one of the 3 block predictions is missing.
+
+A prediction file can be recomputed with `WORRY_RECOMPUTE_PREDICTIONS=1` (window caches in
+`cached_data/`, or the time series to rebuild them), but only the original caches give the
+windows of the paper: the 100 random 20 s windows per participant are drawn when the cache
+is built, and the train/val split follows the order of the participants in the cache. `export_R_data.py` writes the exports (`R/data/export_*.csv`, network attributions
 projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots/`.
 
 ## Repository structure

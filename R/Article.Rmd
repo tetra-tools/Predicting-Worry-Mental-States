@@ -24,12 +24,15 @@ dir.create("plots", showWarnings = FALSE)
 
 ```{r functions}
 # Function to load and combine datasets
+# An export missing because its prediction file is not available (see export_R_data.py) is
+# left out with a message; the analyses below then use the populations that are present.
 load_and_combine <- function(path_prefix, seq_length_label) {
-  df_val <- read_csv(paste0(path_prefix, "_val_", seq_length_label, ".csv"))
-  df_test <- read_csv(paste0(path_prefix, "_test_", seq_length_label, ".csv"))
-  df_train <- read_csv(paste0(path_prefix, "_train_", seq_length_label, ".csv"))
-  
-  df_combined <- rbind(df_val, df_test, df_train)
+  files <- paste0(path_prefix, "_", c("val", "test", "train"), "_", seq_length_label, ".csv")
+  missing <- files[!file.exists(files)]
+  if (length(missing) > 0) message("Not available, left out: ", paste(basename(missing), collapse = ", "))
+  if (length(missing) == length(files)) return(NULL)
+
+  df_combined <- do.call(rbind, lapply(files[file.exists(files)], read_csv))
   df_combined$seq_length <- seq_length_label
   return(df_combined)
 }
@@ -236,6 +239,9 @@ tmp <- df %>%
                            levels = c("aae", "wae", "nae", "rae"),
                            labels = c("Overall", "Worry", "Neutral", "Reappraisal")))
 
+# Supplementary Figure 1 needs the 9 exports (3 populations x 3 window configurations)
+complete_mae <- nrow(distinct(df, split, seq_length)) == 9
+if (complete_mae) {
 g_overall <- grouped_ggbetweenstats(
   data = tmp[tmp$Condition == "Overall",],
   x = `Sequence Length`,
@@ -251,6 +257,22 @@ g_overall <- grouped_ggbetweenstats(
 )
 
 ggsave("plots/figure_mae_overall.png", plot = g_overall, width = 15, height = 6, dpi = 300)
+} else {
+  # Partial version: the window configurations on the validation set, and the three
+  # populations with the task blocks (figure_mae_overall.png is not written)
+  overall <- tmp[tmp$Condition == "Overall",]
+  for (part in list(
+    list(data = filter(overall, split == "val"), x = "Sequence Length", file = "plots/figure_mae_overall_val_windows.png"),
+    list(data = filter(overall, seq_length == "block"), x = "Population", file = "plots/figure_mae_overall_block_populations.png"))) {
+    if (n_distinct(part$data[[part$x]]) < 2) next
+    g <- ggbetweenstats(data = part$data, x = !!sym(part$x), y = ae_value, pairwise.display = "none",
+                        results.subtitle = FALSE,
+                        ggplot.component = list(scale_y_continuous(trans = "log10"),
+                                                ylab("Absolute error (log10 scale)")))
+    ggsave(part$file, plot = g, width = 7, height = 6, dpi = 300)
+    print(g)
+  }
+}
 ```
 
 ```{r shap_temporal, fig.height=5, fig.width=8}
@@ -335,6 +357,32 @@ grouped_ggbetweenstats(
   ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"))  # zoom only: ylim() would drop AUCs < 0.5
 )
 ggsave("plots/figure_auc.png", width = 15, height = 10, dpi = 300)
+```
+
+```{r auc_val_windows, fig.height=10, fig.width=15}
+# AUC per participant of the validation set (cohort 1) for the three window configurations
+# available on this population (20 s random windows, 25 s task blocks, full run)
+tmp_val <- tmp %>% filter(Population == "FINA: test set")
+if (n_distinct(tmp_val$`Sequence Length`) >= 2) {
+  grouped_ggbetweenstats(
+    data = tmp_val,
+    x = `Sequence Length`,
+    y = auc_value,
+    grouping.var = Condition,
+    type = "parametric",
+    pairwise.display = "significant",
+    results.subtitle = FALSE,
+    p.adjust.method = "holm",
+    centrality.plotting = TRUE,
+    ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"))
+  )
+  ggsave("plots/figure_auc_val_windows.png", width = 15, height = 10, dpi = 300)
+}
+tmp %>%
+  group_by(`Sequence Length`, Population, Condition) %>%
+  summarise(n = n(), mean_auc = mean(auc_value, na.rm = TRUE), sd_auc = sd(auc_value, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Condition, `Sequence Length`, Population) %>%
+  print(n = Inf)
 ```
 
 

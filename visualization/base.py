@@ -8,7 +8,11 @@ configurations (``type``):
     "full"     : the whole run (1190 TR) per subject
 and ``step``/``pop``: "train" / "val" (cohort 1) and "test" (cohort 2).
 
-Predictions are cached in ``config.PREDICTIONS_DIR/<name>/`` (``*.pt``). SHAP values computed by
+Predictions are cached in ``config.PREDICTIONS_DIR/<name>/`` (``*.pt``). A missing prediction file
+is recomputed only if ``config.RECOMPUTE_PREDICTIONS`` (``WORRY_RECOMPUTE_PREDICTIONS=1``) or
+``Visualization(..., recompute=True)``: it then needs the window caches, since without them the
+random 20 TR windows and the train/val split cannot be reproduced. The data modules are only
+built for such a computation. SHAP values computed by
 ``main_shap.py`` are read from ``config.SHAP_DIR``
 (``shap-lstmv4vf_pop-val_batch-{0..7}.npz`` and ``shap-lstmv4vf_pop-test_batch-{0..29}.npz``).
 Figures are written to ``results/<name>/predictions/{validation,test}/heatmap/``.
@@ -21,7 +25,7 @@ from scipy.special import softmax
 from sklearn.metrics import auc, confusion_matrix, roc_curve
 import torch
 import numpy as np
-from config import PREDICTIONS_DIR, SHAP_DIR
+from config import COMMON_FILE, PREDICTIONS_DIR, RECOMPUTE_PREDICTIONS, SHAP_DIR
 from datasets.TimeSeriesDataModule import TimeSeriesDataModule
 from models.lstm_v4 import LSTMClassifier
 from typing import Dict, List, Optional
@@ -35,7 +39,16 @@ class MetricConfig:
     colors: List[str] = ('blue', 'green', 'red')
 
 class Visualization:
-    def __init__(self, checkpoint_path, name: str = "lstm", plot: bool = True):
+    # Data modules, built on first use only (see __getattr__): attribute -> (TR per window,
+    # windows per subject, setup stage)
+    _DATAMODULES = {
+        "full_dataset_trainvaltest": (1190, 1, "fit-test"),
+        "std_dataset_trainvalpredtest": (20, 100, ""),
+        "block_dataset_trainvaltest": (25, 34, "fit-test"),
+    }
+
+    def __init__(self, checkpoint_path, name: str = "lstm", plot: bool = True, recompute: Optional[bool] = None):
+        self.recompute = RECOMPUTE_PREDICTIONS if recompute is None else recompute
         self.plot = plot
         self.checkpoint_path = checkpoint_path
         self.name = name
@@ -97,21 +110,20 @@ class Visualization:
         os.makedirs(f"{base_dir}/predictions/validation/heatmap", exist_ok=True)
         os.makedirs(f"{base_dir}/predictions/test/heatmap", exist_ok=True)
 
+    def __getattr__(self, attr):
+        """Build a data module (full / training / block windows) the first time it is used."""
+        if attr in Visualization._DATAMODULES:
+            window, samples, stage = Visualization._DATAMODULES[attr]
+            datamodule = TimeSeriesDataModule(subcortical=self.subcortical, window_timeserie=window,
+                                              samples_per_file=samples, rate_output=True, identifiers_output=True,
+                                              scores_output=True, batch_size=32)
+            datamodule.setup(stage)
+            setattr(self, attr, datamodule)
+            return datamodule
+        raise AttributeError(f"'Visualization' object has no attribute '{attr}'")
+
     def _init_data_and_model(self):
-        """Initialize the data modules (full / training / block windows) and load the model"""
-        # Load data
-        self.full_dataset_trainvaltest = TimeSeriesDataModule(subcortical=self.subcortical, window_timeserie=1190, 
-                                          samples_per_file=1, rate_output=True, identifiers_output=True, scores_output=True, batch_size=32)
-        self.full_dataset_trainvaltest.setup("fit-test")
-
-        self.std_dataset_trainvalpredtest = TimeSeriesDataModule(subcortical=self.subcortical, window_timeserie=20, 
-                                          samples_per_file=100, rate_output=True, identifiers_output=True, scores_output=True, batch_size=32)
-        self.std_dataset_trainvalpredtest.setup("")
-
-        self.block_dataset_trainvaltest = TimeSeriesDataModule(subcortical=self.subcortical, window_timeserie=25, 
-                                          samples_per_file=34, rate_output=True, identifiers_output=True, scores_output=True, batch_size=32)
-        self.block_dataset_trainvaltest.setup("fit-test")
-
+        """Load the model (the data modules are built only to compute missing predictions)"""
         # Load model and set to eval mode
         self.trained_model = LSTMClassifier.load_from_checkpoint(self.checkpoint_path)
         self.trained_model.eval()
@@ -148,7 +160,21 @@ class Visualization:
 
         Returns:
             [data, predictions, labels, id1, id2, rates, scores]
+
+        Raises:
+            FileNotFoundError: the prediction file is missing and recompute is False
         """
+        # Check if predictions are already saved to file
+        predictions_file = self._get_predictions_filename(step=step, type=type)
+        if os.path.exists(predictions_file):
+            print(f"Loading predictions from {predictions_file}")
+            return torch.load(predictions_file, weights_only=False)  # local file written below
+        if not self.recompute:
+            raise FileNotFoundError(
+                f"{predictions_file} not found. Set WORRY_RECOMPUTE_PREDICTIONS=1 to compute it from the "
+                "window caches (without the original caches, the windows and the train/val split differ "
+                "from the paper).")
+
         if type == "full":
             if step == "train":
                 dataset = self.full_dataset_trainvaltest.train_dataloader()
@@ -170,12 +196,6 @@ class Visualization:
                 dataset = self.std_dataset_trainvalpredtest.val_dataloader()
             elif step == "test":
                 dataset = self.std_dataset_trainvalpredtest.test_dataloader()
-
-        # Check if predictions are already saved to file
-        predictions_file = self._get_predictions_filename(step=step, type=type)
-        if os.path.exists(predictions_file):
-            print(f"Loading predictions from {predictions_file}")
-            return torch.load(predictions_file, weights_only=False)  # local file written below
 
         # Generate new predictions
         data, predictions, labels, idx1, idx2, rates, scores = [], [], [], [], [], [], []
@@ -511,7 +531,16 @@ class Visualization:
                 metric_values[i][pop_name]["mae"] = round(self.mae_loss(y_hat[pop_ids, :, :].reshape(-1, 3), y[pop_ids, :, :].reshape(-1, 3)).item(), 2)
         return metric_values
 
-    def visualize_roc_metrics_rates(self, type: str = "block", threshold: int = 0, asc = 0, delta: bool = True) -> list:
+    def _fina_in_raw(self, id1: str) -> Optional[str]:
+        """Cohort-2 ``raw_id`` of a cohort-1 participant (common_file.csv), or None
+        (same lookup as ``TimeSeriesDataset.is_fina_in_raw``, without building a dataset)."""
+        if not hasattr(self, "_common_file"):
+            self._common_file = pd.read_csv(COMMON_FILE)
+        match = self._common_file[self._common_file["mr_studyid"] == id1]
+        return match["raw_id"].values[0] if match.shape[0] > 0 else None
+
+    def visualize_roc_metrics_rates(self, type: str = "block", threshold: int = 0, asc = 0, delta: bool = True,
+                                    steps=("train", "val", "test")) -> list:
         """Classification metrics (AUC, sensitivity, specificity, PPV, NPV, LR+, LR-, MAE) per population.
 
         Metrics pool every time point of the selected windows. Populations: "validation"
@@ -523,29 +552,31 @@ class Visualization:
             threshold, asc, delta: with type="block", keep the blocks whose median rating
                 (delta=False) or median absolute rating change from the previous block
                 (delta=True) is <= threshold (asc=0), >= threshold (asc=1) or == threshold (asc=2)
+            steps: predictions to load among "train", "val" and "test"; the populations that
+                need a missing step are left out (e.g. steps=("val",) -> "validation" only)
 
         Returns:
             One dict per comparison of ``self._comparisons``: {population: {metric: value}}
         """
-        # Get predictions and process data
-        batchTr = self._get_predictions("train", type)
-        _, y_hatTr, yTr, id1Tr, _, ratesTr, mTr = batchTr
-        batchV = self._get_predictions("val", type)
-        _, y_hatV, yV, id1V, _, ratesV, mV = batchV
-        batchT = self._get_predictions("test", type)
-        _, y_hatT, yT, id1T, _, ratesT, mT = batchT
+        # Get predictions and process data (a step not loaded counts as an empty population)
+        batches = {s: self._get_predictions(s, type) for s in ("train", "val", "test") if s in steps}
+        if not batches:
+            raise ValueError(f"steps must contain 'train', 'val' or 'test', got {steps}")
+        ref = next(iter(batches.values()))
+        empty = (None, ref[1][:0], ref[2][:0], [], [], np.array(ref[5])[:0], [])
+        _, y_hatTr, yTr, id1Tr, _, ratesTr, mTr = batches.get("train", empty)
+        _, y_hatV, yV, id1V, _, ratesV, mV = batches.get("val", empty)
+        _, y_hatT, yT, id1T, _, ratesT, mT = batches.get("test", empty)
         y_hat = torch.cat((y_hatTr, y_hatV, y_hatT), dim=0)
         y = torch.cat((yTr, yV, yT), dim=0)
         rates = np.concatenate((np.array(ratesTr), np.array(ratesV), np.array(ratesT)), axis=0)
         id1 = np.concatenate((np.array(id1Tr), np.array(id1V), np.array(id1T)), axis=0) if type == "block" else np.concatenate((np.array(id1Tr), np.array(id1V), np.array(id1T)), axis=0)
         
         # Separate populations
-        dataset = self.block_dataset_trainvaltest.test_dataset
-        
-        raw_in_training_ids = np.concatenate([np.where(np.array(id1T) == dataset.is_fina_in_raw(id))[0] for id in np.unique(id1Tr)])
+        raw_in_training_ids = np.concatenate([np.where(np.array(id1T) == self._fina_in_raw(id))[0] for id in np.unique(id1Tr)] or [np.array([], dtype=np.int64)])
         raw_in_training_ids = raw_in_training_ids.flatten() if raw_in_training_ids.size > 0 else np.array([], dtype=np.int64)  # int: NumPy refuses empty float index arrays
 
-        raw_in_validation_ids = np.concatenate([np.where(np.array(id1T) == dataset.is_fina_in_raw(id))[0] for id in np.unique(id1V)])
+        raw_in_validation_ids = np.concatenate([np.where(np.array(id1T) == self._fina_in_raw(id))[0] for id in np.unique(id1V)] or [np.array([], dtype=np.int64)])
         raw_in_validation_ids = raw_in_validation_ids.flatten() if raw_in_validation_ids.size > 0 else np.array([], dtype=np.int64)
         
         mask = np.ones(len(id1T), dtype=bool)
@@ -588,6 +619,14 @@ class Visualization:
         else:
             for pop, values in population_ids.items():
                 population_subs[pop] = id1[values].flatten()
+
+        # Populations whose step was not loaded (or without any block left) are left out
+        if "train" not in batches:   # cohort 2 cannot be split by participation in the training set
+            population_ids.pop("raw_in_training"); population_ids.pop("raw_not_in_training")
+        if "val" not in batches:
+            population_ids.pop("raw_in_validation")
+        population_ids = {pop: ids for pop, ids in population_ids.items() if ids.size > 0}
+        population_subs = {pop: population_subs[pop] for pop in population_ids}
 
         # Calculate metrics
         metric_values = self._calculate_population_metrics(y, y_hat, population_ids, population_subs)

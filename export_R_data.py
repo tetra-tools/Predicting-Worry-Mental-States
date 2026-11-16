@@ -17,8 +17,9 @@ the 481 ROIs and projected on the L2-normalised templates of
 external/schaeffer_subcortical_smith_templates.csv, along the ROI axis.
 
 Inputs (paths in config.py, see readme.md, "Re-running the analyses of the paper"): the
-checkpoint, the SHAP files of main_shap.py, the window caches (or the time series), the
-cached predictions (optional), common_file.csv and the clinical files.
+checkpoint, the SHAP files of main_shap.py, the cached predictions, common_file.csv and the
+clinical files. An export whose prediction file is missing is skipped (unless
+WORRY_RECOMPUTE_PREDICTIONS=1, which recomputes it from the window caches).
 
 Example::
 
@@ -149,9 +150,16 @@ def main():
     templates = (list(network.columns[1:]), weights, list(network.iloc[:, 0]))
 
     clinical, common = load_clinical(), load_common()
+    skipped = []
     for split in ["train", "val", "test"]:
         for kind in ["training", "block", "full"]:
-            export(v, split, kind, clinical, common, args.out, templates)
+            try:
+                export(v, split, kind, clinical, common, args.out, templates)
+            except FileNotFoundError as error:   # prediction file missing (and not recomputed)
+                skipped.append(f"export_{split}_{kind}.csv")
+                print(f"Skipped export_{split}_{kind}.csv: {error}")
+    if skipped:
+        print(f"{len(skipped)} exports skipped (no prediction file): {', '.join(skipped)}")
 
 
 if __name__ == "__main__":

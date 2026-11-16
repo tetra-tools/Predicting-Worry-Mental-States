@@ -3,7 +3,8 @@
 # (per-participant AUC direction, network projection of the SHAP values, SMA model scale).
 #
 # Needs the files listed in readme.md, "Re-running the analyses of the paper".
-# Neither the model nor the SHAP values are recomputed.
+# Neither the model, the SHAP values nor the predictions are recomputed: every result comes
+# from the cached predictions, and the analyses whose predictions are missing are left out.
 #
 # Usage (from the repository root):
 #   bash rerun_paper_analyses.sh                 # checks + exports + R analyses
@@ -26,10 +27,19 @@ for f in "$CKPT" "$COMMON_FILE" "$(cfg FINA_CLINICAL_CSV)" "$(cfg RAW_CLINICAL_C
 done
 n_shap=$(count "$SHAP_DIR"/shap-lstmv4vf_pop-*_batch-*.npz)
 [ "$n_shap" -eq 38 ] || { echo "Expected 38 SHAP files in $SHAP_DIR, found $n_shap"; exit 1; }
-n_cache=$(count "$(cfg CACHE_DIR)"/cache_data-TASK_*_roi-wSubcortical_seed-123.pt)
-n_pred=$(count "$(cfg PREDICTIONS_DIR)/$NAME"/*_n-all.pt)
 echo "checkpoint, common_file.csv, clinical files and 38 SHAP files found"
-echo "$n_cache/6 window caches (missing ones are rebuilt from WORRY_DATA_ROOT), $n_pred/9 cached predictions (missing ones are recomputed)"
+
+# Predictions: never recomputed here (without the original window caches, the windows and the
+# train/val split would differ from the paper)
+export WORRY_RECOMPUTE_PREDICTIONS=0
+PRED_DIR="$(cfg PREDICTIONS_DIR)/$NAME"
+pred() { echo "$PRED_DIR/model_best_score=val_loss=0.1113_sub-true_type-$1_step-$2_n-all.pt"; }
+for s in train val test; do   # task blocks: Figures 1-5, Supplementary Figures 2-4
+  test -f "$(pred block $s)" || { echo "Required: $(pred block $s)"; exit 1; }
+done
+for t in training full; do for s in train val test; do
+  test -f "$(pred $t $s)" && echo "available: $t / $s" || echo "not available (analyses left out): $t / $s"
+done; done
 
 echo "== 1. Checks of the previous exports (R/data_previous/), if present"
 if [ -d R/data ] && [ ! -d R/data_previous ]; then
