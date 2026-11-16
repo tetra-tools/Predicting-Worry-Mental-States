@@ -5,8 +5,9 @@ LSTM attributions and the BOLD inputs. Implemented in [`phase_protocol.py`](phas
 run by `rerun_paper_analyses.sh` (step 2b) or:
 
 ```bash
-python phase_protocol.py --pop test   # cohort 2, 88 participants: confirmatory
-python phase_protocol.py --pop val    # cohort 1 test subjects, 24 participants: replication
+python phase_protocol.py --pop test   # RAW external validation set, 88 participants: confirmatory
+python phase_protocol.py --pop val    # FINA test set, 24 participants: replication (it also
+                                      # selected the checkpoint, see readme)
 ```
 
 ## Why a protocol

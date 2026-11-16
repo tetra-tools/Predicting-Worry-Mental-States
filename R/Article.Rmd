@@ -314,7 +314,7 @@ g_overall <- grouped_ggbetweenstats(
 
 ggsave("plots/figure_mae_overall.png", plot = g_overall, width = 15, height = 6, dpi = 300)
 } else {
-  # Partial version: the window configurations on the validation set, and the three
+  # Partial version: the window configurations on the FINA test set (val), and the three
   # populations with the task blocks (figure_mae_overall.png is not written)
   overall <- tmp[tmp$Condition == "Overall",]
   for (part in list(
@@ -422,7 +422,7 @@ ggsave("plots/figure_auc.png", width = 15, height = 10, dpi = 300)
 ```
 
 ```{r auc_val_windows, fig.height=10, fig.width=15}
-# AUC per participant of the validation set (cohort 1) for the three window configurations
+# AUC per participant of the FINA test set (code: val) for the three window configurations
 # available on this population (20 s random windows, 25 s task blocks, full run). The same
 # participants are measured with every configuration: repeated-measures tests, on the
 # participants with an AUC for every configuration.

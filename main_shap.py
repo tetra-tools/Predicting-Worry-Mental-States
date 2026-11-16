@@ -14,7 +14,7 @@ One run processes one batch of 102 blocks (3 participants x 34 blocks) and write
 ``id1``/``id2``: identifiers) in the current directory (never in ``config.SHAP_DIR``,
 so that the published SHAP values cannot be overwritten). The visualization code reads
 these files from ``config.SHAP_DIR``:
-    --population val  : batches 0-7  (24 validation participants)
+    --population val  : batches 0-7  (24 participants of the FINA test set)
     --population test : batches 0-29 (88 participants of cohort 2)
 
 Memory: about 15 GB per batch with the full background (run on 64 GB nodes).
@@ -132,7 +132,7 @@ if __name__ == "__main__":
                         help='Checkpoint of the trained model (default: published model)')
     parser.add_argument('--batch_idx', type=int, default=1, help='Index of the batch of 102 blocks to explain')
     parser.add_argument('--population', type=str, default='test', choices=['test', 'val'],
-                        help='test = cohort 2 (default), val = validation subjects of cohort 1')
+                        help='test = RAW external validation set (default), val = FINA test set')
     parser.add_argument('--seed', type=int, default=123, help='Random seed for reproducibility')
     # Unused: kept so that existing job scripts keep working
     for name, kind, default in [('learning_rate', float, 0.0005), ('dropout_rate', float, 0.1), ('weight_decay', float, 0.2),

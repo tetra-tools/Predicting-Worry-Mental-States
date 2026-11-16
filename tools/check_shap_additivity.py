@@ -21,8 +21,8 @@ unreliable, the spatial patterns less affected).
 
 Usage::
 
-    python tools/check_shap_additivity.py                 # population test (cohort 2)
-    python tools/check_shap_additivity.py --pop val       # validation subjects of cohort 1
+    python tools/check_shap_additivity.py                 # test = RAW external validation set
+    python tools/check_shap_additivity.py --pop val       # val = FINA test set
 """
 import glob
 import os

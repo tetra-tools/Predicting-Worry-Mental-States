@@ -42,8 +42,8 @@ clinical files (or --clinical). Outputs in --out:
 
 Usage::
 
-    python phase_protocol.py --pop test            # cohort 2 (confirmatory)
-    python phase_protocol.py --pop val             # cohort 1 test subjects (replication)
+    python phase_protocol.py --pop test            # RAW external validation set (confirmatory)
+    python phase_protocol.py --pop val             # FINA test set (replication)
 """
 import glob
 import os
@@ -62,6 +62,7 @@ from config import CHECKPOINT, PREDICTIONS_DIR, SHAP_DIR  # noqa: E402
 from utils.network import load_templates  # noqa: E402
 
 CONDITIONS = ["Worry", "Neutral", "Reappraisal"]
+POPULATION_LABELS = {"train": "FINA: training set", "val": "FINA: test set", "test": "RAW: external validation set"}
 T = 25
 LAST_SECOND = 25                                   # 1-based second of the explained output: left out
 WINDOWS = {"baseline": (1, 2), "induction": (6, 15), "maintenance": (16, 24), "block": (6, 24)}
@@ -471,7 +472,7 @@ def figures(means, curves, out_dir, sets):
 
 def write_summary(tests, n_rois, out_dir, pop, n_participants):
     pre = tests[tests.family != "E"].copy()
-    lines = [f"# Phase protocol - population {pop} ({n_participants} participants)", "",
+    lines = [f"# Phase protocol - {POPULATION_LABELS.get(pop, pop)} (`{pop}`, {n_participants} participants)", "",
              "Windows (seconds of the figures): induction 6-15, maintenance 16-24, baseline 1-2; "
              "second 25 left out. FDR (Benjamini-Hochberg) within each family.", "",
              "Composition check: 'vs median set' is the estimate minus the median estimate of the 15 "
@@ -494,7 +495,8 @@ def write_summary(tests, n_rois, out_dir, pop, n_participants):
 
 def main():
     parser = ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--pop", default="test", choices=["test", "val"])
+    parser.add_argument("--pop", default="test", choices=["test", "val"],
+                        help="test = RAW external validation set (default), val = FINA test set")
     parser.add_argument("--name", default="lstmv4vlt", help="predictions/<name>/ folder")
     parser.add_argument("--checkpoint", default=CHECKPOINT, help="only its file name is used (prediction files)")
     parser.add_argument("--shap_dir", default=SHAP_DIR)
