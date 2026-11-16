@@ -216,7 +216,7 @@ df_test_block_with_shap <- read_export("./data/export_test_block_with_shap.csv")
 df_block_withshap <- bind_exports(list(df_val_block_with_shap, df_test_block_with_shap))
 
 # Clean environment
-rm(list = setdiff(ls(), c("df", "df_block_withshap", lsf.str())))
+rm(list = setdiff(ls(), c("df", "df_block_withshap", "last_timepoint_excluded", lsf.str())))
 
 # Prepare data
 df <- prepare_plot_vars(df)
