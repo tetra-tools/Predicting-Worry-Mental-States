@@ -15,7 +15,8 @@ random 20 TR windows and the train/val split cannot be reproduced. The data modu
 built for such a computation. SHAP values computed by
 ``main_shap.py`` are read from ``config.SHAP_DIR``
 (``shap-lstmv4vf_pop-val_batch-{0..7}.npz`` and ``shap-lstmv4vf_pop-test_batch-{0..29}.npz``).
-Figures are written to ``results/<name>/predictions/{validation,test}/heatmap/``.
+Figures are written to ``results/<name>/predictions/{validation,test}/heatmap/`` (``validation`` =
+FINA test set, ``test`` = RAW external validation set; titles use ``POPULATION_LABELS``).
 """
 from dataclasses import dataclass
 import os
@@ -548,7 +549,7 @@ class Visualization:
         """Classification metrics (AUC, sensitivity, specificity, PPV, NPV, LR+, LR-, MAE) per population.
 
         Metrics pool every time point of the selected windows. Populations: "validation"
-        (cohort 1), "test" (cohort 2), and cohort 2 split by participation in cohort 1
+        (FINA test set), "test" (RAW external validation set), and RAW split by participation in FINA
         ("raw_in_training", "raw_in_validation", "raw_not_in_training", see common_file.csv).
 
         Args:

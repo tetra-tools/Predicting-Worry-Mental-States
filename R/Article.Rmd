@@ -122,6 +122,11 @@ find_local_maxima <- function(x, y, n_max = 3, min_distance = 5) {
   )
 }
 
+# Last second of the 25 s window (timepoint 25 after the +1 below): the explained output is the
+# prediction at that second, so its own input carries a large attribution by construction
+# (recency of the LSTM output), not a brain effect. It is left out of the SHAP figures and models.
+last_timepoint_excluded <- 25
+
 # Network SHAP of the blocks of one condition (class_label; "" = all blocks and the 54 columns),
 # one row per block, second and network. Two quantities:
 #   shap_value  |projection| of the block-normalised SHAP map on the network template
@@ -154,6 +159,7 @@ prepare_shap_network_data <- function(df, class_label, split_filter = "test", ti
       shap_value = abs(shap_value), 
       timepoint = timepoint + 1
     ) %>%
+    filter(timepoint < last_timepoint_excluded) %>%
     group_by(id1, id2, block_id, timepoint) %>%
     mutate(shap_rank = (shap_value - min(shap_value)) / (max(shap_value) - min(shap_value))) %>%
     ungroup() %>%
@@ -308,7 +314,7 @@ g_overall <- grouped_ggbetweenstats(
 
 ggsave("plots/figure_mae_overall.png", plot = g_overall, width = 15, height = 6, dpi = 300)
 } else {
-  # Partial version: the window configurations on the validation set, and the three
+  # Partial version: the window configurations on the FINA test set (val), and the three
   # populations with the task blocks (figure_mae_overall.png is not written)
   overall <- tmp[tmp$Condition == "Overall",]
   for (part in list(
@@ -327,6 +333,8 @@ ggsave("plots/figure_mae_overall.png", plot = g_overall, width = 15, height = 6,
 
 ```{r shap_temporal, fig.height=5, fig.width=8}
 tmp <- df_block_withshap %>%
+  # last second left out before the 0-1 rescaling (recency of the explained output)
+  filter(as.numeric(timepoint) + 1 < last_timepoint_excluded) %>%
   mutate(
     timepoint = as.numeric(timepoint) + 1,
     shap_all = rowMeans(select(., starts_with("shap_")) %>% select(-starts_with("shap_network")) %>% abs(), na.rm = TRUE) %>% 
@@ -403,17 +411,18 @@ grouped_ggbetweenstats(
   y = auc_value,
   grouping.var = Condition,
   type = "parametric",
-  pairwise.display = "significant",
+  pairwise.display = "none",   # no test annotations on the figure (brackets, p values, caption)
   results.subtitle = FALSE,
-  p.adjust.method = "holm",
+  bf.message = FALSE,
   centrality.plotting = TRUE,
-  ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"))  # zoom only: ylim() would drop AUCs < 0.5
+  ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"),  # zoom only: ylim() would drop AUCs < 0.5
+                          labs(caption = NULL))
 )
 ggsave("plots/figure_auc.png", width = 15, height = 10, dpi = 300)
 ```
 
 ```{r auc_val_windows, fig.height=10, fig.width=15}
-# AUC per participant of the validation set (cohort 1) for the three window configurations
+# AUC per participant of the FINA test set (code: val) for the three window configurations
 # available on this population (20 s random windows, 25 s task blocks, full run). The same
 # participants are measured with every configuration: repeated-measures tests, on the
 # participants with an AUC for every configuration.
@@ -433,11 +442,11 @@ if (n_distinct(tmp_val$`Sequence Length`) >= 2) {
     subject.id = participant,
     grouping.var = Condition,
     type = "parametric",
-    pairwise.display = "significant",
+    pairwise.display = "none",   # no test annotations on the figure (brackets, p values, caption)
     results.subtitle = FALSE,
-    p.adjust.method = "holm",
+    bf.message = FALSE,
     centrality.plotting = TRUE,
-    ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"))
+    ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"), labs(caption = NULL))
   )
   ggsave("plots/figure_auc_val_windows.png", width = 15, height = 10, dpi = 300)
 }

@@ -33,6 +33,14 @@ Two cohorts of older adults performed the same worry induction and reappraisal t
 | 1 | FINA | 116 | training set (80 % of participants, 92) and test set (20 %, 24 participants) | `train`, `val` |
 | 2 | RAW | 88 | external validation set (20 participants were also enrolled in FINA, see `common_file.csv`) | `test` |
 
+Names: the code keeps the identifiers `train`, `val` and `test` (file names, `step`, `--pop`);
+every figure and table shows the names of the paper: **FINA: training set**, **FINA: test set**
+(`val`) and **RAW: external validation set** (`test`) (`POPULATION_LABELS` in
+`visualization/base.py`, factor labels in `R/Article.Rmd`). The FINA test set is held out
+from training but was used for early stopping and to select the checkpoint (lowest L1 loss
+on it, `main.py`): its metrics are therefore slightly optimistic, and the RAW external
+validation set is the independent evaluation.
+
 Both studies were approved by the University of Pittsburgh IRB. **The fMRI and clinical
 data are not public**; they are available from the corresponding authors upon
 reasonable request. The repository contains no participant data.
@@ -149,7 +157,8 @@ they read the checkpoint and the other inputs from `config.py`:
 All the analysis code is in [`visualization/base.py`](visualization/base.py)
 (`Visualization` class). Predictions are cached in `$WORRY_PREDICTIONS_DIR/<name>/` (a missing
 file is recomputed only with `WORRY_RECOMPUTE_PREDICTIONS=1`);
-heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/`.
+heatmaps are written to `results/<name>/predictions/{validation,test}/heatmap/` (folder names
+from the code: `validation` = FINA test set, `test` = RAW external validation set).
 
 ### 4. Statistical analyses (R)
 
@@ -178,7 +187,20 @@ Network attributions ([`utils/network.py`](utils/network.py)):
 - **Confidence intervals.** The curves average the blocks of each participant first, so the
   95 % confidence intervals are computed across participants, not across blocks.
 
-### 5. Brain maps of the networks (Figure 4)
+### 5. Pre-specified phase protocol (replication of Karim et al. 2017)
+
+[`PROTOCOL.md`](PROTOCOL.md) fixes, before the analysis, the windows (induction 6-15 s,
+maintenance 16-24 s, from the task timing), 15 anatomical ROI sets and the hypotheses of the
+2017 CBF study (initiation, maintenance and habituation, direction of the reappraisal effects,
+worry severity). [`phase_protocol.py`](phase_protocol.py) tests them on the attributions
+(enrichment, direction of the attributed activity) and on the BOLD inputs stored in the block
+prediction files (no window cache needed), with participant-level tests and FDR per family:
+
+```bash
+python phase_protocol.py --pop test    # writes results/protocol/test/ (summary.md, tests.csv, figures)
+```
+
+### 6. Brain maps of the networks (Figure 4)
 
 The right part of Figure 4 shows the templates of the selected networks (those of the
 curves), not SHAP values. `tools/make_network_maps.py` writes each template as a volume
@@ -217,7 +239,7 @@ Files to provide (folders relative to `$WORRY_RECOVERY_ROOT`, see [Data](#data))
 | `FINA_2025_01_17.csv` | `clinical/` | clinical variables of cohort 1 |
 | `RAW_JY_Data_Request_2.10.25.csv` | `clinical/` | clinical variables of cohort 2 |
 | *For `RUN_NOTEBOOK=1`:* `pheno_raw.csv` | `clinical/` | education of cohort 2 (sample description) |
-| *Optional:* the 6 other predictions `..._type-{training,full}_step-{train,val,test}_n-all.pt` | `predictions/lstmv4vlt/` | 20 s and full-run windows (Supplementary Figure 1, AUC tables); with the validation files only, these windows are compared on the validation set (`figure_auc_val_windows.png`, `figure_mae_overall_val_windows.png`) |
+| *Optional:* the 6 other predictions `..._type-{training,full}_step-{train,val,test}_n-all.pt` | `predictions/lstmv4vlt/` | 20 s and full-run windows (Supplementary Figure 1, AUC tables); with the `val` files only, these windows are compared on the FINA test set (`figure_auc_val_windows.png`, `figure_mae_overall_val_windows.png`) |
 | *Optional:* previous exports `export_*.csv` | `R/data/` of the repository (moved to `R/data_previous/` and checked) | `tools/check_network_projection.py`, `R/check_auc_direction.R` |
 
 The script stops if the checkpoint, `common_file.csv`, a clinical file, one of the 38 SHAP
@@ -247,6 +269,7 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── R/Article.Rmd            mixed-effects models, per-participant AUCs, SHAP figures
 ├── R/check_auc_direction.R  effect of pROC's automatic direction on previous exports
 ├── tools/check_network_projection.py  which projection produced the network columns of an export
+├── phase_protocol.py        pre-specified phase protocol (PROTOCOL.md): second-phase contrast, direction
 ├── tools/check_shap_additivity.py   do the SHAP values add up to the predictions (no cache needed)
 ├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer on a few participants
 ├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
@@ -283,6 +306,8 @@ onset), the whole run, and the random 20 s training windows.
   predictions, and `tools/compare_explainers.py` (also the checkpoint) recomputes the
   attributions of a few participants with `shap.GradientExplainer` from the inputs stored
   in the block prediction files and compares the ROI maps and network orders.
+- The last second of the block window (25 s) is left out of the SHAP figures, models and
+  protocol: it is the input of the explained output and is large by construction.
 - The order of the networks partly depends on the spatial extent of their templates: on a
   first set of curves, compact templates (SMA, auditory, visual) ranked higher than
   extended ones (right executive control, anterior salience), Spearman rho about -0.5.

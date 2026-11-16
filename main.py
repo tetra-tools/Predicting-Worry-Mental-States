@@ -2,7 +2,8 @@
 
 Cohort 1 (FINA, N=116) is split at the subject level into a training set (80 %)
 and a validation set (20 %); the checkpoint with the lowest validation L1 loss
-is kept. Cohort 2 (RAW, N=88) is never used here: it is the independent test
+is kept. In the paper this held-out 20 % is the "FINA: test set" (``val`` in the
+code); since it selects the checkpoint, its metrics are slightly optimistic. Cohort 2 (RAW, N=88) is never used here: it is the independent test
 set evaluated in ``visualization/``.
 
 Example (settings of the published model; they are the defaults)::
