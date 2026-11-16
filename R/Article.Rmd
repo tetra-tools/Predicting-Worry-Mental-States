@@ -67,7 +67,7 @@ prepare_plot_vars <- function(df) {
   
   df$`Population` <- factor(df$split, 
                             levels = c("train", "val", "test"),
-                            labels = c("FINA: training set", "FINA: test set", "RAW independent set"))
+                            labels = c("FINA: training set", "FINA: test set", "RAW: external validation set"))
   
   df <- df %>%
     mutate(
@@ -317,7 +317,7 @@ tmp <- df_block_withshap %>%
                       labels = c("Overall", "Worry", "Neutral", "Reappraisal")),
     Population = factor(split, 
                        levels = c("train", "val", "test"),
-                       labels = c("FINA: training set", "FINA: test set", "RAW independent set"))
+                       labels = c("FINA: training set", "FINA: test set", "RAW: external validation set"))
   ) %>%
   select(timepoint, shap_value, Condition, Population)
 
@@ -503,6 +503,18 @@ library(pals)
 library(forcats) 
 colors <- polychrome(18)
 
+# Same y axis for the 18 group plots (6 groups x 3 conditions): range of the means and of
+# their 95 % confidence intervals (as drawn by add = "mean_ci") over all networks
+group_ylim <- bind_rows(lapply(c("worry", "neutral", "reappraisal"), function(label)
+  prepare_shap_network_data(df_block_withshap, label, ids = 1:18))) %>%
+  group_by(true_class, network, timepoint) %>%
+  summarise(m = mean(shap_value_scaled, na.rm = TRUE),
+            h = qt(0.975, pmax(sum(!is.na(shap_value_scaled)) - 1, 1)) * sd(shap_value_scaled, na.rm = TRUE) /
+                sqrt(sum(!is.na(shap_value_scaled))),
+            .groups = "drop") %>%
+  summarise(lo = min(m - h, na.rm = TRUE), hi = max(m + h, na.rm = TRUE)) %>%
+  unlist()
+
 for (label in c("worry", "neutral", "reappraisal")){
   plot_data <- prepare_shap_network_data(df_block_withshap, label, ids=1:18) %>%
     mutate(
@@ -525,6 +537,7 @@ for (label in c("worry", "neutral", "reappraisal")){
       filter(network_group == paste("Group", grp)) %>%
       ggline(x = "timepoint", y = "shap_value_scaled", color = "network", 
              add = "mean_ci", palette = col_vec, numeric.x.axis = TRUE) + 
+      coord_cartesian(ylim = group_ylim) +   # same y axis for all groups and conditions
       labs(x = "Time (s) task synchronized", y = "smaShap", 
            colour = "Networks")
     ggsave(paste0("plots/shap_", label, "_group", grp, ".png"), p, width = 8, height = 6)

@@ -38,6 +38,10 @@ class MetricConfig:
     labels: List[str] = ('Sensitivity', 'Specificity', 'PPV', 'NPV', 'LR+', 'LR-', 'AUC')
     colors: List[str] = ('blue', 'green', 'red')
 
+# Names of the populations in the figures (as in the paper)
+POPULATION_LABELS = {"train": "FINA: training set", "val": "FINA: test set", "test": "RAW: external validation set"}
+
+
 class Visualization:
     # Data modules, built on first use only (see __getattr__): attribute -> (TR per window,
     # windows per subject, setup stage)
@@ -306,7 +310,7 @@ class Visualization:
                                          data, levels=levels, colors='black', alpha=0.5, 
                                          linewidths=1)
                     
-                plt.title(f'{step} Heatmap - {self.conditions[label]}')
+                plt.title(f'{POPULATION_LABELS.get(pop, pop)} - {step} Heatmap - {self.conditions[label]}')
                 if step != "AUC":
                     cbar = plt.colorbar(im, label=f'{step} Value', ax=ax)
                     if contours > 0:
@@ -367,7 +371,7 @@ class Visualization:
         # Create main heatmap
         im = ax.imshow(x_network.T, origin='lower', cmap="Reds", aspect='auto', vmax=max_x, vmin=0, interpolation=interpolation)
             
-        plt.title(f'Shap Network Heatmap - {self.conditions[label]}')
+        plt.title(f'{POPULATION_LABELS.get(pop, pop)} - Shap Network Heatmap - {self.conditions[label]}')
         cbar = plt.colorbar(im, label=f'Shap Network Value', ax=ax)
         
         plt.xlim(-.5, 23.5)
@@ -422,7 +426,7 @@ class Visualization:
         # Create main heatmap
         im = ax.imshow(x_network.T, origin='lower', aspect='auto', cmap="seismic", vmax=max_x, vmin=-max_x, interpolation=interpolation)
             
-        plt.title(f'Shap Network Heatmap - Absolute {self.conditions[slabels[0]]}-{self.conditions[slabels[1]]}')
+        plt.title(f'{POPULATION_LABELS.get(pop, pop)} - Shap Network Heatmap - Absolute {self.conditions[slabels[0]]}-{self.conditions[slabels[1]]}')
         cbar = plt.colorbar(im, label=f'Shap Network Value', ax=ax)
         
         plt.xlim(-.5, 23.5)

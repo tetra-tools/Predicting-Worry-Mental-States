@@ -19,7 +19,7 @@ df <- bind_rows(lapply(c("val", "test", "train"), function(s)
       pmax(label_worry, label_neutral, label_reappraisal) == label_neutral ~ "neutral",
       pmax(label_worry, label_neutral, label_reappraisal) == label_reappraisal ~ "reappraisal"),
     Population = factor(split, levels = c("train", "val", "test"),
-                        labels = c("FINA: training set", "FINA: test set", "RAW independent set")))
+                        labels = c("FINA: training set", "FINA: test set", "RAW: external validation set")))
 
 # AUC as computed in the article (auto) and with the direction fixed a priori
 two_aucs <- function(response, predictor) {

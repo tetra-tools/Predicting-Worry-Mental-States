@@ -30,8 +30,8 @@ Two cohorts of older adults performed the same worry induction and reappraisal t
 
 | Cohort | Study | N | Role in the paper | Name in the code |
 |---|---|---|---|---|
-| 1 | FINA | 116 | training (80 % of participants) and held-out validation (20 %, 24 participants) | `train`, `val` |
-| 2 | RAW | 88 | independent test cohort, never seen during training | `test` |
+| 1 | FINA | 116 | training set (80 % of participants, 92) and test set (20 %, 24 participants) | `train`, `val` |
+| 2 | RAW | 88 | external validation set (20 participants were also enrolled in FINA, see `common_file.csv`) | `test` |
 
 Both studies were approved by the University of Pittsburgh IRB. **The fMRI and clinical
 data are not public**; they are available from the corresponding authors upon
