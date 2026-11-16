@@ -6,6 +6,7 @@ results/
 *.pt
 *.csv
 !external/schaeffer_subcortical_smith_templates.csv
+!external/schaefer400_7networks_centroids.csv
 
 # Exports read by R/Article.Rmd and its figures
 R/data/

@@ -64,6 +64,11 @@ for pop in val test; do
     --out "R/data/check_shap_additivity_$pop.csv" || echo "additivity check failed for $pop (left out)"
 done
 
+echo "== 2b. Pre-specified phase protocol (PROTOCOL.md; results/protocol/<pop>/)"
+for pop in test val; do
+  python phase_protocol.py --pop "$pop" --name "$NAME" --checkpoint "$CKPT" || echo "phase protocol failed for $pop (left out)"
+done
+
 echo "== 3. R analyses (figures in R/plots/, report R/Article.html)"
 (cd R && Rscript -e 'rmarkdown::render("Article.Rmd")')
 

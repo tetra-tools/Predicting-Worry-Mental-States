@@ -178,7 +178,20 @@ Network attributions ([`utils/network.py`](utils/network.py)):
 - **Confidence intervals.** The curves average the blocks of each participant first, so the
   95 % confidence intervals are computed across participants, not across blocks.
 
-### 5. Brain maps of the networks (Figure 4)
+### 5. Pre-specified phase protocol (replication of Karim et al. 2017)
+
+[`PROTOCOL.md`](PROTOCOL.md) fixes, before the analysis, the windows (induction 6-15 s,
+maintenance 16-24 s, from the task timing), 15 anatomical ROI sets and the hypotheses of the
+2017 CBF study (initiation, maintenance and habituation, direction of the reappraisal effects,
+worry severity). [`phase_protocol.py`](phase_protocol.py) tests them on the attributions
+(enrichment, direction of the attributed activity) and on the BOLD inputs stored in the block
+prediction files (no window cache needed), with participant-level tests and FDR per family:
+
+```bash
+python phase_protocol.py --pop test    # writes results/protocol/test/ (summary.md, tests.csv, figures)
+```
+
+### 6. Brain maps of the networks (Figure 4)
 
 The right part of Figure 4 shows the templates of the selected networks (those of the
 curves), not SHAP values. `tools/make_network_maps.py` writes each template as a volume
@@ -247,6 +260,7 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── R/Article.Rmd            mixed-effects models, per-participant AUCs, SHAP figures
 ├── R/check_auc_direction.R  effect of pROC's automatic direction on previous exports
 ├── tools/check_network_projection.py  which projection produced the network columns of an export
+├── phase_protocol.py        pre-specified phase protocol (PROTOCOL.md): second-phase contrast, direction
 ├── tools/check_shap_additivity.py   do the SHAP values add up to the predictions (no cache needed)
 ├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer on a few participants
 ├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
@@ -283,6 +297,8 @@ onset), the whole run, and the random 20 s training windows.
   predictions, and `tools/compare_explainers.py` (also the checkpoint) recomputes the
   attributions of a few participants with `shap.GradientExplainer` from the inputs stored
   in the block prediction files and compares the ROI maps and network orders.
+- The last second of the block window (25 s) is left out of the SHAP figures, models and
+  protocol: it is the input of the explained output and is large by construction.
 - The order of the networks partly depends on the spatial extent of their templates: on a
   first set of curves, compact templates (SMA, auditory, visual) ranked higher than
   extended ones (right executive control, anterior salience), Spearman rho about -0.5.
