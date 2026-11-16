@@ -271,7 +271,7 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── tools/check_network_projection.py  which projection produced the network columns of an export
 ├── phase_protocol.py        pre-specified phase protocol (PROTOCOL.md): second-phase contrast, direction
 ├── tools/check_shap_additivity.py   do the SHAP values add up to the predictions (no cache needed)
-├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer on a few participants
+├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer, one SHAP batch per run
 ├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
 ├── utils/                   NaN check, network projection of the SHAP values (network.py)
 └── external/                network templates
@@ -304,8 +304,14 @@ onset), the whole run, and the random 20 s training windows.
   nor a new SHAP run: `tools/check_shap_additivity.py` (SHAP files and block predictions;
   run by `rerun_paper_analyses.sh`) tests whether the attributions add up to the
   predictions, and `tools/compare_explainers.py` (also the checkpoint) recomputes the
-  attributions of a few participants with `shap.GradientExplainer` from the inputs stored
-  in the block prediction files and compares the ROI maps and network orders.
+  attributions of one SHAP batch with `shap.GradientExplainer` (expected gradients, same
+  background and explained output) from the inputs stored in the block prediction files. It
+  compares additivity, ROI maps, network orders and time courses, optionally convergence with
+  the number of samples and repeatability across seeds, and writes the new attributions with
+  the file name of `main_shap.py`, so that `phase_protocol.py` and
+  `tools/check_shap_additivity.py` can be rerun on them with `--shap_dir`. Run it as a SLURM
+  array, one batch per task (30 RAW + 8 FINA batches), then
+  `python tools/compare_explainers.py --summarize <out>`.
 - The last second of the block window (25 s) is left out of the SHAP figures, models and
   protocol: it is the input of the explained output and is large by construction.
 - The order of the networks partly depends on the spatial extent of their templates: on a
