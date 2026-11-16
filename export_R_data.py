@@ -12,9 +12,12 @@ NA otherwise); with SHAP: rate (= rating), shap_roi_<condition>_<ROI> (481 x 3) 
 shap_network_<condition>_<network> (18 x 3).
 
 Network attributions (Methods: "dot product between L2 regularized ROI importance and
-reference networks"): each SHAP map (block, time point, condition) is L2-normalised over
-the 481 ROIs and projected on the L2-normalised templates of
-external/schaeffer_subcortical_smith_templates.csv, along the ROI axis.
+reference networks"): the SHAP map of each block and condition (25 time points x 481 ROIs)
+is L2-normalised over time and ROIs, then projected on the L2-normalised templates of
+external/schaeffer_subcortical_smith_templates.csv, along the ROI axis (utils/network.py).
+Normalising the whole block, and not each time point, keeps how much each second
+contributes to the prediction of the block (explained at its last time point).
+``--normalization timepoint`` gives the previous exports (one normalisation per time point).
 
 Inputs (paths in config.py, see readme.md, "Re-running the analyses of the paper"): the
 checkpoint, the SHAP files of main_shap.py, the cached predictions, common_file.csv and the
@@ -36,6 +39,7 @@ REPO = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, REPO)
 
 from config import CHECKPOINT, COMMON_FILE, FINA_CLINICAL_CSV, RAW_CLINICAL_CSV  # noqa: E402
+from utils.network import NORMALIZATIONS, load_templates, network_projection  # noqa: E402
 
 CONDITIONS = ["worry", "neutral", "reappraisal"]
 CLINICAL = ["pswq_total", "rsq_total", "hars_score", "age", "sex", "madrs_total", "hamd_total", "education"]
@@ -75,13 +79,7 @@ def load_common():
     return pd.DataFrame({"raw": norm_id(common["raw_id"]).values, "fina": norm_id(common["mr_studyid"]).values})
 
 
-def network_projection(shap_values, weights):
-    """(samples, 25, 481, 3) -> (samples, 25, 18, 3): L2 over ROIs, then dot product with each template."""
-    shap_norm = shap_values / np.sqrt(np.sum(shap_values ** 2, axis=2, keepdims=True))
-    return np.einsum("ntrc,kr->ntkc", shap_norm, weights)
-
-
-def export(v, split, kind, clinical, common, out_dir, templates=None):
+def export(v, split, kind, clinical, common, out_dir, templates=None, normalization="block"):
     data, prediction, labels, id1, id2, rates, _ = v._get_predictions(split, kind)
     prediction, labels = prediction.numpy(), labels.numpy()
     n, t = prediction.shape[:2]
@@ -120,7 +118,7 @@ def export(v, split, kind, clinical, common, out_dir, templates=None):
             raise ValueError(f"{len(missing)} {split} blocks have no SHAP values (e.g. {missing[:3]})")
         shap = shap[[position[k] for k in pkey]]
         roi_names, weights, network_names = templates
-        network = network_projection(shap, weights)
+        network = network_projection(shap, weights, normalization)   # (blocks, 25, 18, 3)
         cols = {"rate": df["rating"].to_numpy()}
         for k, c in enumerate(CONDITIONS):
             for r, roi in enumerate(roi_names):
@@ -138,23 +136,24 @@ def main():
     parser.add_argument("--checkpoint", default=CHECKPOINT)
     parser.add_argument("--name", default="lstmv4vlt", help="results/<name>/ folder (heatmaps)")
     parser.add_argument("--out", default=os.path.join(REPO, "R", "data"))
+    parser.add_argument("--normalization", default="block", choices=NORMALIZATIONS,
+                        help="L2 normalisation of the SHAP maps before the network projection: per block "
+                             "(time x ROI, default) or per time point (ROI, previous exports)")
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
     from visualization import Visualization
     v = Visualization(args.checkpoint, args.name)
 
-    network = pd.read_csv(TEMPLATES)
-    weights = network.iloc[:, 1:].to_numpy(dtype=float)
-    weights = weights / np.sqrt(np.sum(weights ** 2, axis=1, keepdims=True))
-    templates = (list(network.columns[1:]), weights, list(network.iloc[:, 0]))
+    network_names, roi_names, weights = load_templates(TEMPLATES)
+    templates = (roi_names, weights, network_names)
 
     clinical, common = load_clinical(), load_common()
     skipped = []
     for split in ["train", "val", "test"]:
         for kind in ["training", "block", "full"]:
             try:
-                export(v, split, kind, clinical, common, args.out, templates)
+                export(v, split, kind, clinical, common, args.out, templates, args.normalization)
             except FileNotFoundError as error:   # prediction file missing (and not recomputed)
                 skipped.append(f"export_{split}_{kind}.csv")
                 print(f"Skipped export_{split}_{kind}.csv: {error}")

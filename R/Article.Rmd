@@ -122,7 +122,16 @@ find_local_maxima <- function(x, y, n_max = 3, min_distance = 5) {
   )
 }
 
-# Function to prepare SHAP network data
+# Network SHAP of the blocks of one condition (class_label; "" = all blocks and the 54 columns),
+# one row per block, second and network. Two quantities:
+#   shap_value  |projection| of the block-normalised SHAP map on the network template
+#               (export_R_data.py): the AMOUNT, comparable across seconds, networks and conditions
+#   shap_rank   min-max of shap_value across the networks within each block and second: the
+#               relative RANK of the network at that second. Scaling block by block keeps it
+#               independent of the number of blocks of a condition (16 Worry, 10 Neutral,
+#               8 Reappraisal per participant); pooling the blocks of a participant compressed Worry.
+# The selection of the networks (times_max) and their order in the figures use the rank; the
+# curves use the amount.
 prepare_shap_network_data <- function(df, class_label, split_filter = "test", times_max_threshold = 0.1, ids = NULL) {
   shap_col_pattern <- paste0("shap_network_", class_label)
   
@@ -136,20 +145,20 @@ prepare_shap_network_data <- function(df, class_label, split_filter = "test", ti
       )
     ) %>%
     filter(class_label == "" | true_class == class_label) %>%
-    select(id1, id2, timepoint, contains(shap_col_pattern), rate, pswq_total, age, sex, hars_score, rsq_total, true_class) %>%
+    select(id1, id2, block_id, timepoint, contains(shap_col_pattern), rate, pswq_total, age, sex, hars_score, rsq_total, true_class) %>%
     pivot_longer(cols = contains(shap_col_pattern), 
                  names_to = "network", 
                  values_to = "shap_value") %>%
-    group_by(id1, id2, timepoint) %>%
     mutate(
       network = gsub(shap_col_pattern, "", network), 
       shap_value = abs(shap_value), 
-      timepoint = timepoint + 1,
-      shap_value_scaled = (shap_value - min(shap_value)) / (max(shap_value) - min(shap_value))
+      timepoint = timepoint + 1
     ) %>%
+    group_by(id1, id2, block_id, timepoint) %>%
+    mutate(shap_rank = (shap_value - min(shap_value)) / (max(shap_value) - min(shap_value))) %>%
     ungroup() %>%
     group_by(network, timepoint) %>%
-    mutate(mean_shap = mean(shap_value_scaled, na.rm = TRUE)) %>%
+    mutate(mean_shap = mean(shap_rank, na.rm = TRUE)) %>%
     ungroup() %>%
     group_by(timepoint) %>%
     mutate(is_max_mean = mean_shap == max(mean_shap, na.rm = TRUE)) %>%
@@ -174,6 +183,15 @@ prepare_shap_network_data <- function(df, class_label, split_filter = "test", ti
   }
   
   return(plot_data)
+}
+
+# Mean of each participant over its blocks, so that the 95 % confidence intervals of the
+# figures (add = "mean_ci") are computed across participants and not across blocks
+participant_means <- function(plot_data) {
+  plot_data %>%
+    group_by(id1, id2, true_class, network, timepoint) %>%
+    summarise(shap_value = mean(shap_value, na.rm = TRUE),
+              shap_rank = mean(shap_rank, na.rm = TRUE), .groups = "drop")
 }
 ```
 
@@ -329,7 +347,10 @@ tmp <- df_block_withshap %>%
                        levels = c("train", "val", "test"),
                        labels = c("FINA: training set", "FINA: test set", "RAW: external validation set"))
   ) %>%
-  select(timepoint, shap_value, Condition, Population)
+  select(id1, id2, timepoint, shap_value, Condition, Population) %>%
+  # one value per participant (95 % CI across participants, not across blocks)
+  group_by(Population, Condition, id1, id2, timepoint) %>%
+  summarise(shap_value = mean(shap_value, na.rm = TRUE), .groups = "drop")
 
 mean_data <- tmp %>%
   group_by(Population, Condition, timepoint) %>%
@@ -460,7 +481,9 @@ plot_dan <- plot_data %>%
       Rating = (rate-1)/4,  # 0-1 like in the MAE model (was rate - 1/4)
       Subject = id1
     )
-model <- lmer(shap_value_scaled ~ Age + Sex + PSWQ + RSQ + HARS + Rating + Class + Class*Age + Class*Sex + Class*PSWQ + Class*RSQ + Class*HARS + Class*Rating  + (timepoint|Subject), data = plot_dan)
+# Outcome: rank of the SMA network among the 54 network columns within each block and second
+# (shap_rank, see prepare_shap_network_data); shap_value would model the amount instead
+model <- lmer(shap_rank ~ Age + Sex + PSWQ + RSQ + HARS + Rating + Class + Class*Age + Class*Sex + Class*PSWQ + Class*RSQ + Class*HARS + Class*Rating  + (timepoint|Subject), data = plot_dan)
 
 summary(model)
 g <- ggcoefstats(model, effects = "fixed", digits="signif3", exclude.intercept=TRUE, 
@@ -495,6 +518,7 @@ network_labels <- c(
 plot_data <- prepare_shap_network_data(df_block_withshap, "worry")
 plot_data <- rbind(plot_data, prepare_shap_network_data(df_block_withshap, "neutral"))
 plot_data <- rbind(plot_data, prepare_shap_network_data(df_block_withshap, "reappraisal"))
+plot_data <- participant_means(plot_data)
 
 # Networks selected by prepare_shap_network_data (times_max >= 0.1 in at least one condition),
 # in the order of network_labels. The list was fixed before (7 networks of the first analysis):
@@ -509,10 +533,10 @@ plot_data <- plot_data %>%
     mutate(network = factor(network_labels[as.character(str_replace(network, "_", ""))], levels = network_labels[selected]), network_color = colors[as.numeric(network)], Class = factor(str_to_title(true_class)))
 
 col_vec <- setNames(unique(plot_data$network_color), unique(plot_data$network))
-ggline(plot_data, x = "timepoint", y = "shap_value_scaled", 
+ggline(plot_data, x = "timepoint", y = "shap_value", 
        color = "network", add = "mean_ci", palette = col_vec, 
        numeric.x.axis = TRUE, facet.by = "Class") + 
-  labs(x = "Time (s) task synchronized", y = "smaShap", colour = "Networks") +
+  labs(x = "Time (s) task synchronized", y = "Network SHAP (block-normalised)", colour = "Networks") +
   facet_wrap(~Class, nrow = 2, ncol = 2) +
   theme(legend.position = c(0.75, 0.25))
 ggsave("plots/figure_smaShap.png", width = 12, height = 10, dpi = 300)
@@ -522,28 +546,32 @@ library(pals)
 library(forcats) 
 colors <- polychrome(18)
 
+# Participant means of the 18 networks in each condition (curves: amount, shap_value;
+# order of the networks and groups: rank, shap_rank)
+shap_groups <- lapply(setNames(nm = c("worry", "neutral", "reappraisal")), function(label)
+  participant_means(prepare_shap_network_data(df_block_withshap, label, ids = 1:18)))
+
 # Same y axis for the 18 group plots (6 groups x 3 conditions): range of the means and of
-# their 95 % confidence intervals (as drawn by add = "mean_ci") over all networks
-group_ylim <- bind_rows(lapply(c("worry", "neutral", "reappraisal"), function(label)
-  prepare_shap_network_data(df_block_withshap, label, ids = 1:18))) %>%
+# their 95 % confidence intervals across participants (as drawn by add = "mean_ci") over all networks
+group_ylim <- bind_rows(shap_groups) %>%
   group_by(true_class, network, timepoint) %>%
-  summarise(m = mean(shap_value_scaled, na.rm = TRUE),
-            h = qt(0.975, pmax(sum(!is.na(shap_value_scaled)) - 1, 1)) * sd(shap_value_scaled, na.rm = TRUE) /
-                sqrt(sum(!is.na(shap_value_scaled))),
+  summarise(m = mean(shap_value, na.rm = TRUE),
+            h = qt(0.975, pmax(sum(!is.na(shap_value)) - 1, 1)) * sd(shap_value, na.rm = TRUE) /
+                sqrt(sum(!is.na(shap_value))),
             .groups = "drop") %>%
   summarise(lo = min(m - h, na.rm = TRUE), hi = max(m + h, na.rm = TRUE)) %>%
   unlist()
 
-for (label in c("worry", "neutral", "reappraisal")){
-  plot_data <- prepare_shap_network_data(df_block_withshap, label, ids=1:18) %>%
+for (label in names(shap_groups)){
+  plot_data <- shap_groups[[label]] %>%
     mutate(
       network = factor(network_labels[as.character(str_replace(network, "_", ""))], levels = network_labels),
       network_color = colors[as.numeric(network)]
     ) %>%
     group_by(network) %>%
-    mutate(mean_abs_shap = mean(abs(shap_value_scaled))) %>%
+    mutate(mean_rank = mean(shap_rank, na.rm = TRUE)) %>%
     ungroup() %>%
-    arrange(desc(mean_abs_shap)) %>%
+    arrange(desc(mean_rank), network, id1, id2, timepoint) %>%
     mutate(
       network = fct_inorder(network),
       network_group = paste0('Group ', ntile(row_number(), 6))
@@ -554,10 +582,10 @@ for (label in c("worry", "neutral", "reappraisal")){
   for(grp in 1:6){
     p <- plot_data %>%
       filter(network_group == paste("Group", grp)) %>%
-      ggline(x = "timepoint", y = "shap_value_scaled", color = "network", 
+      ggline(x = "timepoint", y = "shap_value", color = "network", 
              add = "mean_ci", palette = col_vec, numeric.x.axis = TRUE) + 
       coord_cartesian(ylim = group_ylim) +   # same y axis for all groups and conditions
-      labs(x = "Time (s) task synchronized", y = "smaShap", 
+      labs(x = "Time (s) task synchronized", y = "Network SHAP (block-normalised)", 
            colour = "Networks")
     ggsave(paste0("plots/shap_", label, "_group", grp, ".png"), p, width = 8, height = 6)
   }
