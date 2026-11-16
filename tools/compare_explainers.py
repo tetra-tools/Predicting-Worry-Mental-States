@@ -1,9 +1,12 @@
-"""Recompute the attributions of one SHAP batch with GradientExplainer and compare with DeepExplainer.
+"""Recompute the attributions of one SHAP batch with expected gradients and compare with DeepExplainer.
 
 ``shap.DeepExplainer`` has no rule for the LSTM and LayerNorm modules of the model (its
-attributions do not add up to the predictions, tools/check_shap_additivity.py).
-``shap.GradientExplainer`` (expected gradients) only needs the gradients of the model. This
-tool recomputes, for one batch of ``main_shap.py`` (3 participants x 34 blocks), the
+attributions do not add up to the predictions, tools/check_shap_additivity.py). Expected
+gradients (Erion et al. 2021; the algorithm of ``shap.GradientExplainer``) only need the
+gradients of the model: for each block x and sample k, a training block x'_k and a point
+t_k ~ U(0, 1) are drawn, and phi = mean_k (x - x'_k) * grad f(x'_k + t_k (x - x'_k)). It is
+implemented here in PyTorch (``expected_gradients``), so the tool does not import ``shap``.
+This tool recomputes, for one batch of ``main_shap.py`` (3 participants x 34 blocks), the
 attributions of the same blocks for the same explained output (prediction at the last
 second), with the same background (all training blocks by default), and compares the two:
 
@@ -12,9 +15,9 @@ second), with the same background (all training blocks by default), and compares
 * the 18 networks at each second (Spearman rho of the block-normalised projections);
 * the order of the 18 networks per condition (Spearman rho of their means);
 * optional: convergence with the number of samples (--convergence 50,100,400) and
-  repeatability across seeds (--repeats 1): the same metrics, GradientExplainer against itself.
+  repeatability across seeds (--repeats 1): the same metrics, expected gradients against themselves.
 
-The GradientExplainer attributions are written with the file name of main_shap.py
+The expected-gradients attributions are written with the file name of main_shap.py
 (``<out>/shap-lstmv4vf_pop-<pop>_batch-<b>.npz``), so the other analyses can be rerun on them
 with ``--shap_dir <out>`` (phase_protocol.py, tools/check_shap_additivity.py). No window cache
 is needed: the inputs are stored in the block prediction files. Needs the checkpoint, the block
@@ -45,6 +48,35 @@ from utils.network import load_templates, network_projection  # noqa: E402
 CONDITIONS = ["Worry", "Neutral", "Reappraisal"]
 TEMPLATES = os.path.join(REPO, "external", "schaeffer_subcortical_smith_templates.csv")
 POPULATION_LABELS = {"val": "FINA: test set", "test": "RAW: external validation set"}
+EG = "ExpectedGradients"
+
+
+def expected_gradients(f, x, background, nsamples, seed, batch_size=100):
+    """Expected gradients of f (inputs (n, T, R) -> outputs (n, C)) for each block of x.
+
+    Same estimator as shap.GradientExplainer without local smoothing: for each block, nsamples
+    background blocks (with replacement) and interpolation points t ~ U(0, 1);
+    phi = mean (x - x') * grad f(x' + t (x - x')), for each output. Returns (n, T, R, C).
+    """
+    import torch
+    rng = np.random.default_rng(seed)
+    with torch.no_grad():
+        n_out = f(x[:1]).shape[-1]
+    phi = np.zeros(tuple(x.shape) + (n_out,))
+    for j in range(len(x)):
+        base = background[rng.integers(len(background), size=nsamples)]
+        t = torch.as_tensor(rng.uniform(size=nsamples), dtype=x.dtype)[:, None, None]
+        delta = x[j:j + 1] - base                                            # (K, T, R)
+        points = base + t * delta
+        acc = torch.zeros(tuple(x.shape[1:]) + (n_out,), dtype=torch.float64)
+        for s in range(0, nsamples, batch_size):
+            p = points[s:s + batch_size].clone().requires_grad_(True)
+            y = f(p)                                                         # (b, C)
+            for c in range(n_out):
+                g, = torch.autograd.grad(y[:, c].sum(), p, retain_graph=c < n_out - 1)
+                acc[..., c] += (g * delta[s:s + batch_size]).sum(dim=0).double()
+        phi[j] = (acc / nsamples).numpy()
+    return phi
 
 
 def load_block_file(name, checkpoint, step):
@@ -57,7 +89,7 @@ def load_block_file(name, checkpoint, step):
 
 
 def as_blocks(values, n):
-    """SHAP output -> (n, 25, 481, 3) whatever the shap version (list of 3 arrays or one array)."""
+    """Attributions -> (n, 25, 481, 3) (list of 3 arrays, or one array with conditions first or last)."""
     if isinstance(values, list):
         return np.stack([np.asarray(v) for v in values], axis=-1).reshape(n, 25, 481, 3)
     values = np.asarray(values)
@@ -117,7 +149,7 @@ def main():
     parser.add_argument("--batch_idx", type=int, default=0, help="SHAP batch of main_shap.py (3 participants)")
     parser.add_argument("--background", type=int, default=0,
                         help="training blocks used as background (0 = all, as main_shap.py)")
-    parser.add_argument("--nsamples", type=int, default=200, help="samples of GradientExplainer per block")
+    parser.add_argument("--nsamples", type=int, default=200, help="expected-gradients samples per block")
     parser.add_argument("--convergence", default="", help="other numbers of samples to compare, e.g. 50,100,400")
     parser.add_argument("--repeats", type=int, default=0, help="extra runs with other seeds (repeatability)")
     parser.add_argument("--name", default="lstmv4vlt")
@@ -130,7 +162,6 @@ def main():
     if args.summarize:
         return summarize(args.summarize)
 
-    import shap as shap_lib
     import torch
     from models.lstm_v4 import LSTMClassifier
 
@@ -177,11 +208,10 @@ def main():
         def forward(self, inp):
             return self.m(inp)[:, -1, :]
 
-    explainer = shap_lib.GradientExplainer(LastTimePoint(model), background)
+    explain = LastTimePoint(model)
 
     def run(nsamples, seed):
-        torch.manual_seed(seed)
-        return as_blocks(explainer.shap_values(x, nsamples=nsamples, rseed=seed), len(x))
+        return as_blocks(expected_gradients(explain, x, background, nsamples, seed), len(x))
 
     print(f"{POPULATION_LABELS[args.pop]}, batch {args.batch_idx}: {len(x)} blocks, background {len(background)} "
           f"training blocks, {args.nsamples} samples per block, {threads} threads")
@@ -191,10 +221,10 @@ def main():
 
     weights = load_templates(TEMPLATES)[2]
     rows = []
-    for name, values in (("DeepExplainer", deep), (f"GradientExplainer n={args.nsamples}", grad)):
+    for name, values in (("DeepExplainer", deep), (f"{EG} n={args.nsamples}", grad)):
         r, slope = additivity(values, f, expected, true_class)
         rows.append({"comparison": f"additivity {name}", "additivity_r": r, "additivity_slope": slope})
-    rows.append({"comparison": "DeepExplainer vs GradientExplainer", **compare(deep, grad, true_class, weights)})
+    rows.append({"comparison": f"DeepExplainer vs {EG}", **compare(deep, grad, true_class, weights)})
     for k in [int(v) for v in args.convergence.split(",") if v.strip()]:
         other = run(k, args.seed + 1)
         r, slope = additivity(other, f, expected, true_class)
@@ -212,7 +242,7 @@ def main():
     table.to_csv(out_csv, index=False)
     with pd.option_context("display.width", 250, "display.precision", 3, "display.max_columns", 30):
         print(table.drop(columns=["pop", "batch", "n_blocks"]).set_index("comparison").T)
-    print(f"Written: {out_csv} and the GradientExplainer attributions (same file name as main_shap.py)")
+    print(f"Written: {out_csv} and the expected-gradients attributions (same file name as main_shap.py)")
 
 
 if __name__ == "__main__":

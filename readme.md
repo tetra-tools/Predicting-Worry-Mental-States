@@ -304,7 +304,8 @@ onset), the whole run, and the random 20 s training windows.
   nor a new SHAP run: `tools/check_shap_additivity.py` (SHAP files and block predictions;
   run by `rerun_paper_analyses.sh`) tests whether the attributions add up to the
   predictions, and `tools/compare_explainers.py` (also the checkpoint) recomputes the
-  attributions of one SHAP batch with `shap.GradientExplainer` (expected gradients, same
+  attributions of one SHAP batch with expected gradients (the algorithm of
+  `shap.GradientExplainer`, implemented in PyTorch so that it does not depend on `shap`; same
   background and explained output) from the inputs stored in the block prediction files. It
   compares additivity, ROI maps, network orders and time courses, optionally convergence with
   the number of samples and repeatability across seeds, and writes the new attributions with
