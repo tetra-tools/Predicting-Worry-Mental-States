@@ -23,6 +23,28 @@ dir.create("plots", showWarnings = FALSE)
 ```
 
 ```{r functions}
+# Read an export with the identifier columns as text: read_csv guesses the type of each file
+# separately (e.g. common_id holds cohort-2 identifiers in train/val and cohort-1 identifiers
+# in test), and files of different types cannot be bound
+read_export <- function(file) {
+  read_csv(file, col_types = cols(split = col_character(), id1 = col_character(), id2 = col_character(),
+                                  common_id = col_character(), .default = col_guess()))
+}
+
+# Bind exports; any other column read as text in one file and as a number in another (e.g. a
+# clinical variable) is kept as text, with a message (columns only NA in a file are fine)
+bind_exports <- function(dfs) {
+  dfs <- Filter(Negate(is.null), dfs)
+  for (col in unique(unlist(lapply(dfs, names)))) {
+    types <- unique(unlist(lapply(dfs, function(d) if (col %in% names(d) && !all(is.na(d[[col]]))) class(d[[col]])[1])))
+    if (length(types) > 1) {
+      message("Column ", col, " read as ", paste(types, collapse = " and "), ": kept as text")
+      dfs <- lapply(dfs, function(d) { if (col %in% names(d)) d[[col]] <- as.character(d[[col]]); d })
+    }
+  }
+  bind_rows(dfs)
+}
+
 # Function to load and combine datasets
 # An export missing because its prediction file is not available (see export_R_data.py) is
 # left out with a message; the analyses below then use the populations that are present.
@@ -32,7 +54,7 @@ load_and_combine <- function(path_prefix, seq_length_label) {
   if (length(missing) > 0) message("Not available, left out: ", paste(basename(missing), collapse = ", "))
   if (length(missing) == length(files)) return(NULL)
 
-  df_combined <- do.call(rbind, lapply(files[file.exists(files)], read_csv))
+  df_combined <- bind_exports(lapply(files[file.exists(files)], read_export))
   df_combined$seq_length <- seq_length_label
   return(df_combined)
 }
@@ -162,12 +184,12 @@ df_full <- load_and_combine("./data/export", "full")
 df_training <- load_and_combine("./data/export", "training")
 
 # Combine all datasets
-df <- rbind(df_training, df_block, df_full)
+df <- bind_exports(list(df_training, df_block, df_full))
 
 # Load SHAP data
-df_val_block_with_shap <- read_csv("./data/export_val_block_with_shap.csv")
-df_test_block_with_shap <- read_csv("./data/export_test_block_with_shap.csv")
-df_block_withshap <- rbind(df_val_block_with_shap, df_test_block_with_shap)
+df_val_block_with_shap <- read_export("./data/export_val_block_with_shap.csv")
+df_test_block_with_shap <- read_export("./data/export_test_block_with_shap.csv")
+df_block_withshap <- bind_exports(list(df_val_block_with_shap, df_test_block_with_shap))
 
 # Clean environment
 rm(list = setdiff(ls(), c("df", "df_block_withshap", lsf.str())))

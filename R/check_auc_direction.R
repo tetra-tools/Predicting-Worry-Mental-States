@@ -7,8 +7,12 @@ suppressPackageStartupMessages({library(readr); library(dplyr); library(tidyr); 
 args <- commandArgs(TRUE)
 data_dir <- if (length(args) > 0) args[1] else "data"
 
+# Only the columns used here, identifiers as text (their type may differ between files)
 df <- bind_rows(lapply(c("val", "test", "train"), function(s)
-  read_csv(file.path(data_dir, paste0("export_", s, "_block.csv")), show_col_types = FALSE))) %>%
+  read_csv(file.path(data_dir, paste0("export_", s, "_block.csv")), show_col_types = FALSE,
+           col_select = c(split, id1, id2, starts_with("label_"), starts_with("pred_")),
+           col_types = cols(split = col_character(), id1 = col_character(), id2 = col_character(),
+                            .default = col_double())))) %>%
   mutate(
     true_class = case_when(
       pmax(label_worry, label_neutral, label_reappraisal) == label_worry ~ "worry",
