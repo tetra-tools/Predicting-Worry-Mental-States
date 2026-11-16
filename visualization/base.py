@@ -534,9 +534,16 @@ class Visualization:
     def _fina_in_raw(self, id1: str) -> Optional[str]:
         """Cohort-2 ``raw_id`` of a cohort-1 participant (common_file.csv), or None
         (same lookup as ``TimeSeriesDataset.is_fina_in_raw``, without building a dataset)."""
-        if not hasattr(self, "_common_file"):
-            self._common_file = pd.read_csv(COMMON_FILE)
-        match = self._common_file[self._common_file["mr_studyid"] == id1]
+        if not hasattr(self, "_common_file"):   # same preprocessing as TimeSeriesDataset.__init__
+            common = pd.read_csv(COMMON_FILE)
+            common = common[common["raw_id"].notna() & common["mr_studyid"].notna()].copy()
+            common["raw_id"] = common["raw_id"].apply(lambda x: str(x).replace("RAW_", ""))
+            # identifiers are strings in the predictions: compare as strings, whatever the dtype
+            # pandas gives the column (int64 or float64 with NaN would never match)
+            ids = common["mr_studyid"]
+            common["mr_studyid"] = (ids.astype("int64") if pd.api.types.is_numeric_dtype(ids) else ids).astype(str)
+            self._common_file = common[["raw_id", "mr_studyid"]]
+        match = self._common_file[self._common_file["mr_studyid"] == str(id1)]
         return match["raw_id"].values[0] if match.shape[0] > 0 else None
 
     def visualize_roc_metrics_rates(self, type: str = "block", threshold: int = 0, asc = 0, delta: bool = True,

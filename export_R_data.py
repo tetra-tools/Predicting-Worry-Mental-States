@@ -158,6 +158,11 @@ def main():
             except FileNotFoundError as error:   # prediction file missing (and not recomputed)
                 skipped.append(f"export_{split}_{kind}.csv")
                 print(f"Skipped export_{split}_{kind}.csv: {error}")
+                # an export of an earlier run would otherwise still be read by Article.Rmd
+                for stale in (f"export_{split}_{kind}.csv", f"export_{split}_{kind}_with_shap.csv"):
+                    if os.path.exists(os.path.join(args.out, stale)):
+                        os.remove(os.path.join(args.out, stale))
+                        print(f"Removed {stale} of an earlier run")
     if skipped:
         print(f"{len(skipped)} exports skipped (no prediction file): {', '.join(skipped)}")
 

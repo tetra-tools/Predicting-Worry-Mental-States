@@ -33,7 +33,7 @@ echo "checkpoint, common_file.csv, clinical files and 38 SHAP files found"
 # train/val split would differ from the paper)
 export WORRY_RECOMPUTE_PREDICTIONS=0
 PRED_DIR="$(cfg PREDICTIONS_DIR)/$NAME"
-pred() { echo "$PRED_DIR/model_best_score=val_loss=0.1113_sub-true_type-$1_step-$2_n-all.pt"; }
+pred() { echo "$PRED_DIR/$(basename "$CKPT" .ckpt)_sub-true_type-$1_step-$2_n-all.pt"; }   # as Visualization._get_predictions_filename
 for s in train val test; do   # task blocks: Figures 1-5, Supplementary Figures 2-4
   test -f "$(pred block $s)" || { echo "Required: $(pred block $s)"; exit 1; }
 done

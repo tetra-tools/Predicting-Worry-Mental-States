@@ -361,13 +361,23 @@ ggsave("plots/figure_auc.png", width = 15, height = 10, dpi = 300)
 
 ```{r auc_val_windows, fig.height=10, fig.width=15}
 # AUC per participant of the validation set (cohort 1) for the three window configurations
-# available on this population (20 s random windows, 25 s task blocks, full run)
-tmp_val <- tmp %>% filter(Population == "FINA: test set")
+# available on this population (20 s random windows, 25 s task blocks, full run). The same
+# participants are measured with every configuration: repeated-measures tests, on the
+# participants with an AUC for every configuration.
+tmp_val <- tmp %>%
+  filter(Population == "FINA: test set", !is.na(auc_value)) %>%
+  mutate(participant = paste(id1, id2, sep = "_")) %>%
+  group_by(Condition, participant) %>%
+  filter(n_distinct(`Sequence Length`) == n_distinct(tmp$`Sequence Length`[tmp$Population == "FINA: test set"])) %>%
+  ungroup() %>%
+  arrange(Condition, participant, `Sequence Length`) %>%
+  droplevels()
 if (n_distinct(tmp_val$`Sequence Length`) >= 2) {
-  grouped_ggbetweenstats(
+  grouped_ggwithinstats(
     data = tmp_val,
     x = `Sequence Length`,
     y = auc_value,
+    subject.id = participant,
     grouping.var = Condition,
     type = "parametric",
     pairwise.display = "significant",
