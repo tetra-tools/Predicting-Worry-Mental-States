@@ -67,7 +67,7 @@ prepare_plot_vars <- function(df) {
   
   df$`Population` <- factor(df$split, 
                             levels = c("train", "val", "test"),
-                            labels = c("FINA: training set", "FINA: test set", "RAW independent set"))
+                            labels = c("FINA: training set", "FINA: test set", "RAW: external validation set"))
   
   df <- df %>%
     mutate(
@@ -240,17 +240,27 @@ mae_data <- df %>%
   )
 
 # Run mixed effects model
-mae_data$common_id <- is.na(mae_data$common_id)
-model <- lmer(mae ~ Age + Sex + PSWQ + RSQ + Rating + Rating*Class + RSQ*Class + HARS*Class + 
-              PSWQ*Class + Sex*Class + Age*Class + Class + HARS + common_id + (1|Subject),
-              data = mae_data)
+# Enrollment: "RAW only" (common_id NA) vs "FINA and RAW" (reference: participants of RAW also
+# enrolled in FINA). Same coding as the former common_id = is.na(common_id) (TRUE = RAW only):
+# same estimate, sign and p value, only the term name changes (EnrollmentRAW only).
+mae_data$Enrollment <- factor(ifelse(is.na(mae_data$common_id), "RAW only", "FINA and RAW"),
+                              levels = c("FINA and RAW", "RAW only"))
+model_formula <- mae ~ Age + Sex + PSWQ + RSQ + Rating + Rating*Class + RSQ*Class + HARS*Class + 
+              PSWQ*Class + Sex*Class + Age*Class + Class + HARS + Enrollment + (1|Subject)
+if (n_distinct(mae_data$Enrollment) < 2) {   # e.g. on a subset without participants of both studies
+  message("Enrollment has a single level in these data: term left out of the model")
+  model_formula <- update(model_formula, . ~ . - Enrollment)
+}
+model <- lmer(model_formula, data = mae_data)
 
 summary(model)
 anova(model)
 g <- ggcoefstats(model, effects = "fixed", digits="signif3", exclude.intercept=TRUE, 
-            sort="ascending", only.significant=TRUE, xlab = "Estimate", ylab = "Terms")
+            sort="ascending", only.significant=TRUE, xlab = "Estimate", ylab = "Terms") +
+  theme(plot.caption = element_text(size = 8, hjust = 0), plot.margin = margin(10, 20, 10, 10))
 
-ggsave("plots/figure_model_mae.png", plot = g, width = 4, height = 12, dpi = 300)
+# wide enough for the term labels and the caption of ggcoefstats (cropped at width = 4)
+ggsave("plots/figure_model_mae.png", plot = g, width = 8, height = 12, dpi = 300)
 g
 ```
 
@@ -317,7 +327,7 @@ tmp <- df_block_withshap %>%
                       labels = c("Overall", "Worry", "Neutral", "Reappraisal")),
     Population = factor(split, 
                        levels = c("train", "val", "test"),
-                       labels = c("FINA: training set", "FINA: test set", "RAW independent set"))
+                       labels = c("FINA: training set", "FINA: test set", "RAW: external validation set"))
   ) %>%
   select(timepoint, shap_value, Condition, Population)
 
@@ -460,7 +470,7 @@ g
 ```
 
 ```{r shap_networks_reappraisal, fig.height=10, fig.width=12}
-colors <- pal_npg()(7)
+library(pals)   # polychrome() when more than 10 networks are selected
 network_labels <- c(
     "AnteriorHippocampus" = "Anterior Hippocampus",
     "anteriorDMN" = "Anterior Default Mode Network",
@@ -486,8 +496,17 @@ plot_data <- prepare_shap_network_data(df_block_withshap, "worry")
 plot_data <- rbind(plot_data, prepare_shap_network_data(df_block_withshap, "neutral"))
 plot_data <- rbind(plot_data, prepare_shap_network_data(df_block_withshap, "reappraisal"))
 
+# Networks selected by prepare_shap_network_data (times_max >= 0.1 in at least one condition),
+# in the order of network_labels. The list was fixed before (7 networks of the first analysis):
+# a network selected with the corrected projection but absent from that list became NA.
+selected <- unique(as.character(str_replace(plot_data$network, "_", "")))
+unknown <- setdiff(selected, names(network_labels))
+if (length(unknown) > 0) stop("Networks without a label in network_labels: ", paste(unknown, collapse = ", "))
+selected <- names(network_labels)[names(network_labels) %in% selected]
+colors <- if (length(selected) <= 10) pal_npg()(length(selected)) else unname(polychrome(length(selected)))
+
 plot_data <- plot_data %>%
-    mutate(network = factor(network_labels[as.character(str_replace(network, "_", ""))], levels = network_labels[c("AnteriorHippocampus", "DAN", "SMA", "Motor","PrimaryVisual","SecondaryVisual","Cerebellum")]), network_color = colors[as.numeric(network)], Class = factor(str_to_title(true_class)))
+    mutate(network = factor(network_labels[as.character(str_replace(network, "_", ""))], levels = network_labels[selected]), network_color = colors[as.numeric(network)], Class = factor(str_to_title(true_class)))
 
 col_vec <- setNames(unique(plot_data$network_color), unique(plot_data$network))
 ggline(plot_data, x = "timepoint", y = "shap_value_scaled", 
@@ -502,6 +521,18 @@ ggsave("plots/figure_smaShap.png", width = 12, height = 10, dpi = 300)
 library(pals)
 library(forcats) 
 colors <- polychrome(18)
+
+# Same y axis for the 18 group plots (6 groups x 3 conditions): range of the means and of
+# their 95 % confidence intervals (as drawn by add = "mean_ci") over all networks
+group_ylim <- bind_rows(lapply(c("worry", "neutral", "reappraisal"), function(label)
+  prepare_shap_network_data(df_block_withshap, label, ids = 1:18))) %>%
+  group_by(true_class, network, timepoint) %>%
+  summarise(m = mean(shap_value_scaled, na.rm = TRUE),
+            h = qt(0.975, pmax(sum(!is.na(shap_value_scaled)) - 1, 1)) * sd(shap_value_scaled, na.rm = TRUE) /
+                sqrt(sum(!is.na(shap_value_scaled))),
+            .groups = "drop") %>%
+  summarise(lo = min(m - h, na.rm = TRUE), hi = max(m + h, na.rm = TRUE)) %>%
+  unlist()
 
 for (label in c("worry", "neutral", "reappraisal")){
   plot_data <- prepare_shap_network_data(df_block_withshap, label, ids=1:18) %>%
@@ -525,6 +556,7 @@ for (label in c("worry", "neutral", "reappraisal")){
       filter(network_group == paste("Group", grp)) %>%
       ggline(x = "timepoint", y = "shap_value_scaled", color = "network", 
              add = "mean_ci", palette = col_vec, numeric.x.axis = TRUE) + 
+      coord_cartesian(ylim = group_ylim) +   # same y axis for all groups and conditions
       labs(x = "Time (s) task synchronized", y = "smaShap", 
            colour = "Networks")
     ggsave(paste0("plots/shap_", label, "_group", grp, ".png"), p, width = 8, height = 6)
