@@ -416,7 +416,7 @@ grouped_ggbetweenstats(
   bf.message = FALSE,
   centrality.plotting = TRUE,
   ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"),  # zoom only: ylim() would drop AUCs < 0.5
-                          labs(caption = NULL))
+                          labs(caption = NULL), theme(plot.caption = element_blank()))
 )
 ggsave("plots/figure_auc.png", width = 15, height = 10, dpi = 300)
 ```
@@ -446,9 +446,14 @@ if (n_distinct(tmp_val$`Sequence Length`) >= 2) {
     results.subtitle = FALSE,
     bf.message = FALSE,
     centrality.plotting = TRUE,
-    ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"), labs(caption = NULL))
+    ggplot.component = list(coord_cartesian(ylim = c(0.5, 1)), ylab("AUC"), labs(caption = NULL),
+                            theme(plot.caption = element_blank()))
   )
   ggsave("plots/figure_auc_val_windows.png", width = 15, height = 10, dpi = 300)
+} else if (file.exists("plots/figure_auc_val_windows.png")) {
+  # fewer than two window configurations: do not leave the figure of an earlier run
+  file.remove("plots/figure_auc_val_windows.png")
+  message("figure_auc_val_windows.png of an earlier run removed: the 20 s / full-run predictions are missing")
 }
 tmp %>%
   group_by(`Sequence Length`, Population, Condition) %>%
