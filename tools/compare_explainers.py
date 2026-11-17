@@ -40,6 +40,7 @@ REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, REPO)
 from config import CHECKPOINT, PREDICTIONS_DIR, SHAP_DIR  # noqa: E402
 from tools.check_shap_additivity import block_keys  # noqa: E402
+from utils.shap_io import as_block_time_roi_condition, load_shap  # noqa: E402
 from utils.network import load_templates, network_projection  # noqa: E402
 
 CONDITIONS = ["Worry", "Neutral", "Reappraisal"]
@@ -145,9 +146,8 @@ def main():
     path = os.path.join(args.shap_dir, f"shap-lstmv4vf_pop-{args.pop}_batch-{args.batch_idx}.npz")
     if not os.path.exists(path):
         sys.exit(f"Not found: {path}")
-    z = np.load(path)
-    deep = z["shap"].reshape(-1, 25, 481, 3).astype(np.float64)
-    sid1, sid2 = np.asarray(z["id1"]).ravel(), np.asarray(z["id2"]).ravel()
+    deep, sid1, sid2 = load_shap(path)
+    deep = deep.astype(np.float64)
 
     # inputs and predictions of the same blocks, aligned as export_R_data.py
     data, pred, labels, pid1, pid2 = load_block_file(args.name, args.checkpoint, args.pop)
@@ -178,7 +178,7 @@ def main():
         if not (np.array_equal(np.asarray(zo["id1"]).ravel().astype(str), sid1.astype(str))
                 and np.array_equal(np.asarray(zo["id2"]).ravel().astype(str), sid2.astype(str))):
             sys.exit(f"{other_path}: blocks not in the order of the DeepExplainer file")
-        other = zo["shap"].reshape(-1, 25, 481, 3).astype(np.float64)
+        other = as_block_time_roi_condition(zo["shap"]).astype(np.float64)
         rows = []
         for name, values in (("DeepExplainer", deep), (args.other_name, other)):
             r, slope = additivity(values, f, expected, true_class)

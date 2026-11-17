@@ -172,12 +172,25 @@ the figures to `R/plots/`.
 
 Network attributions ([`utils/network.py`](utils/network.py)):
 
-- **Normalisation.** The SHAP map of each block and condition (25 time points x 481 ROIs)
-  is L2-normalised over time *and* ROIs, then projected on each L2-normalised template along
-  the ROI axis. One normalisation per block keeps how much each second contributes to the
-  prediction explained (last time point of the block); the previous normalisation of each
-  time point separately (`--normalization timepoint` of `export_R_data.py`) gave every second
-  the same weight.
+- **SHAP files.** `utils/shap_io.py` reads them with a checked axis order: shap < 0.45
+  returned one array per condition, which `np.savez` stores as (3, blocks, 25, 481), and the
+  former `reshape(-1, 25, 481, 3)` silently mixed conditions, blocks, seconds and ROIs on that
+  layout. Any other shape stops the reading. `tools/inspect_shap_files.py` lists the date,
+  layout, blocks and participants of every file (history of the two SHAP runs in its docstring).
+- **ROI order.** The SHAP value of ROI *i* is the attribution of column *i* of the time
+  series, weighted by column *i* of the templates: `python tools/check_roi_order.py` checks that
+  the time-series files list the same 481 ROIs in the same order as the templates.
+- **Normalisation.** The SHAP map of each block and condition is L2-normalised over the
+  seconds analysed (1-24) *and* the 481 ROIs, then projected on each L2-normalised template
+  along the ROI axis. One normalisation per block keeps how much each second contributes to
+  the prediction explained (last time point of the block). Second 25, the input of the explained
+  output, is left out of the norm as of every analysis: in the norm (`--normalization
+  block_with_last`, exports of 2026-11-16) it set most of it, so that the other seconds of a
+  block were scaled by how dominant its last second was. `--normalization timepoint`
+  normalises each second separately (the paper's Methods: every second gets the same weight,
+  the curves only follow the spatial pattern). The three differ by a factor common to all
+  networks of a block and second: the ranks, the selection of the networks and the SMA model
+  are the same; only the amounts (curves) differ.
 - **Amount and rank.** `prepare_shap_network_data` returns the absolute projection
   (`shap_value`, the amount: the curves) and its min-max across the networks within each
   block and second (`shap_rank`: the selection and the order of the networks in the figures,
@@ -186,6 +199,11 @@ Network attributions ([`utils/network.py`](utils/network.py)):
   blocks of a participant had compressed the Worry values.
 - **Confidence intervals.** The curves average the blocks of each participant first, so the
   95 % confidence intervals are computed across participants, not across blocks.
+- **Top 9 per condition.** `figure_networks_top9.png`: rows Worry, Neutral, Reappraisal;
+  columns ranks 1-3, 4-6, 7-9 (mean `shap_rank` over participants and seconds); same axes in
+  every panel; one legend; the highest point of each mean curve marked in the network's colour
+  with its second. `networks_top9.csv` lists the ranks and peaks. The colours of the networks
+  are fixed in `external/network_colors.csv`, shared with the brain maps (section 6).
 
 ### 5. Pre-specified phase protocol (replication of Karim et al. 2017)
 
@@ -202,8 +220,20 @@ python phase_protocol.py --pop test    # writes results/protocol/test/ (summary.
 
 ### 6. Brain maps of the networks (Figure 4)
 
-The right part of Figure 4 shows the templates of the selected networks (those of the
-curves), not SHAP values. `tools/make_network_maps.py` writes each template as a volume
+The brain maps show the templates of the networks, not SHAP values: they do not depend on the
+data. `tools/render_network_maps.py` draws each template on the inflated fsaverage cortex
+(lateral, medial and ventral views of both hemispheres) and on a cerebellum surface built from
+AAL3 (posterior and inferior views), positive weights from 2 to 8 in a single-hue map ending in
+the network's colour of `external/network_colors.csv` (the colour of its curves); the subtitle
+gives the share of the weight in the cortex, the cerebellum and the other subcortical regions,
+which these views do not show (e.g. Basal Ganglia, 72 %):
+
+```bash
+python tools/render_network_maps.py --aal-dir /path/to/AAL3                                 # 18 networks
+python tools/render_network_maps.py --aal-dir /path/to/AAL3 --top9 R/plots/networks_top9.csv  # + sheet of the top-9 networks
+```
+
+For BrainNet Viewer, `tools/make_network_maps.py` writes each template as a volume
 (`<network>.nii`), a BrainNet Viewer node file (`<network>.node`) and a preview, plus a
 cerebellum surface (`cerebellum.nv`, BrainNet's cortical meshes have none):
 
@@ -274,7 +304,10 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer (or precomputed attributions, --other_dir)
 ├── tools/expected_gradients_all_baselines.py  deterministic expected gradients (Captum): all training blocks, fixed grid
 ├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
-├── utils/                   NaN check, network projection of the SHAP values (network.py)
+├── tools/render_network_maps.py  network templates drawn on the cortex and the cerebellum (nilearn)
+├── tools/check_roi_order.py  are the time-series ROIs in the order of the templates
+├── tools/inspect_shap_files.py  provenance of the 38 SHAP files (dates, layout, blocks, participants)
+├── utils/                   NaN check, network projection (network.py), SHAP file reading (shap_io.py)
 └── external/                network templates
 ```
 

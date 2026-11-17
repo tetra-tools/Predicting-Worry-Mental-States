@@ -36,6 +36,7 @@ import pandas as pd
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, REPO)
 from config import CHECKPOINT, PREDICTIONS_DIR, SHAP_DIR  # noqa: E402
+from utils.shap_io import load_shap  # noqa: E402
 
 CONDITIONS = ["Worry", "Neutral", "Reappraisal"]
 
@@ -69,11 +70,10 @@ def load_shap_sums(pop, shap_dir):
         sys.exit(f"No SHAP file shap-lstmv4vf_pop-{pop}_batch-*.npz in {shap_dir}")
     sums, id1, id2 = [], [], []
     for f in files:
-        z = np.load(f)
-        shap = z["shap"].reshape(-1, 25, 481, 3)
+        shap, i1, i2 = load_shap(f)
         sums.append(shap.sum(axis=(1, 2)))
-        id1.extend(np.asarray(z["id1"]).ravel())
-        id2.extend(np.asarray(z["id2"]).ravel())
+        id1.extend(i1)
+        id2.extend(i2)
     return np.vstack(sums), np.array(id1), np.array(id2)
 
 

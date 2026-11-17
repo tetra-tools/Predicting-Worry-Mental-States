@@ -17,7 +17,9 @@ is L2-normalised over time and ROIs, then projected on the L2-normalised templat
 external/schaeffer_subcortical_smith_templates.csv, along the ROI axis (utils/network.py).
 Normalising the whole block, and not each time point, keeps how much each second
 contributes to the prediction of the block (explained at its last time point).
-``--normalization timepoint`` gives the previous exports (one normalisation per time point).
+The last second (input of the explained output) is left out of the block norm, as of every
+analysis. ``--normalization block_with_last`` gives the exports of November 16, 2026 (last second
+in the norm), ``--normalization timepoint`` the per-second normalisation of the paper's Methods.
 
 Inputs (paths in config.py, see readme.md, "Re-running the analyses of the paper"): the
 checkpoint, the SHAP files of main_shap.py, the cached predictions, common_file.csv and the
@@ -137,8 +139,9 @@ def main():
     parser.add_argument("--name", default="lstmv4vlt", help="results/<name>/ folder (heatmaps)")
     parser.add_argument("--out", default=os.path.join(REPO, "R", "data"))
     parser.add_argument("--normalization", default="block", choices=NORMALIZATIONS,
-                        help="L2 normalisation of the SHAP maps before the network projection: per block "
-                             "(time x ROI, default) or per time point (ROI, previous exports)")
+                        help="L2 normalisation of the SHAP maps before the network projection: block (seconds "
+                             "1-24 x ROI, default), block_with_last (seconds 1-25 x ROI, exports of 2026-11-16) "
+                             "or timepoint (ROI of each second, the paper's Methods)")
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)
 

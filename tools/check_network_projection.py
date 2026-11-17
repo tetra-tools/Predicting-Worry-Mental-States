@@ -1,9 +1,10 @@
 """Which projection produced the shap_network_* columns of an existing export?
 
-Recomputes the 54 network columns from the 1443 shap_roi_* columns of the same rows, in three ways:
-  block     : the map of each block and condition (25 time points x 481 ROIs) is L2-normalised
-              over time and ROIs and projected on the L2-normalised templates along the ROI axis
+Recomputes the 54 network columns from the 1443 shap_roi_* columns of the same rows, in four ways:
+  block     : the map of each block and condition is L2-normalised over the seconds 1-24 and the
+              481 ROIs and projected on the L2-normalised templates along the ROI axis
               (current exports, utils/network.py)
+  block_with_last : same with second 25 in the norm (exports of 2026-11-16)
   timepoint : each (block, time, condition) map is L2-normalised over the 481 ROIs, same
               projection (exports before the block normalisation)
   notebook  : per-time-point normalisation, then np.matmul(x.reshape(-1, 481), W.T).reshape(-1, 25, 18, 3)
@@ -48,7 +49,8 @@ stored = np.stack([df[[f"shap_network_{c}_{n}" for n in net_names]].to_numpy(dty
 x_norm = x / np.sqrt(np.sum(x ** 2, axis=1, keepdims=True))
 blocks = x.reshape(-1, T, 481, 3)
 candidates = {
-    "block (L2 over time and ROIs, ROI axis)": network_projection(blocks, W, "block").reshape(-1, 18, 3),
+    "block (L2 over seconds 1-24 and ROIs, ROI axis)": network_projection(blocks, W, "block").reshape(-1, 18, 3),
+    "block_with_last (L2 over seconds 1-25 and ROIs, exports of 2026-11-16)": network_projection(blocks, W, "block_with_last").reshape(-1, 18, 3),
     "timepoint (L2 over ROIs, ROI axis)": network_projection(blocks, W, "timepoint").reshape(-1, 18, 3),
     "notebook (reshape(-1, 481) on (..., 481, 3))": np.matmul(x_norm.reshape(-1, 481), W.T).reshape(-1, 18, 3),
 }

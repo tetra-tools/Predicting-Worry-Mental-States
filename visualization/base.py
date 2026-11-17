@@ -28,6 +28,7 @@ import torch
 import numpy as np
 from config import COMMON_FILE, PREDICTIONS_DIR, RECOMPUTE_PREDICTIONS, SHAP_DIR
 from utils.network import load_templates, network_projection
+from utils.shap_io import load_shap
 from datasets.TimeSeriesDataModule import TimeSeriesDataModule
 from models.lstm_v4 import LSTMClassifier
 from typing import Dict, List, Optional
@@ -138,22 +139,22 @@ class Visualization:
         """Load the SHAP values computed by main_shap.py (shape: blocks x 25 TR x 481 ROIs x 3 conditions)"""
         shap_vals, shap_vals_id1, shap_vals_id2 = [], [], []
         base_dir = SHAP_DIR
-        for i in range(8):
-            tmp = np.load(f"{base_dir}/shap-lstmv4vf_pop-val_batch-{i}.npz")
-            shap_vals.append(tmp["shap"])
-            shap_vals_id1.extend(tmp["id1"])
-            shap_vals_id2.extend(tmp["id2"])
-        self.shap_vals = np.vstack(shap_vals).reshape((-1, 25, 481, 3))
+        for i in range(8):   # load_shap checks the axis order (shap < 0.45 stored conditions first)
+            values, i1, i2 = load_shap(f"{base_dir}/shap-lstmv4vf_pop-val_batch-{i}.npz")
+            shap_vals.append(values)
+            shap_vals_id1.extend(i1)
+            shap_vals_id2.extend(i2)
+        self.shap_vals = np.concatenate(shap_vals)
         self.shap_vals_id1 = np.array(shap_vals_id1).flatten()
         self.shap_vals_id2 = np.array(shap_vals_id2).flatten()
 
         shap_test, shap_test_id1, shap_test_id2 = [], [], []
         for i in range(30):
-            tmp = np.load(f"{base_dir}/shap-lstmv4vf_pop-test_batch-{i}.npz")
-            shap_test.append(tmp["shap"])
-            shap_test_id1.extend(tmp["id1"])
-            shap_test_id2.extend(tmp["id2"])
-        self.shap_test = np.vstack(shap_test).reshape((-1, 25, 481, 3))
+            values, i1, i2 = load_shap(f"{base_dir}/shap-lstmv4vf_pop-test_batch-{i}.npz")
+            shap_test.append(values)
+            shap_test_id1.extend(i1)
+            shap_test_id2.extend(i2)
+        self.shap_test = np.concatenate(shap_test)
         self.shap_test_id1 = np.array(shap_test_id1).flatten()
         self.shap_test_id2 = np.array(shap_test_id2).flatten()
 
@@ -338,8 +339,8 @@ class Visualization:
     def generate_network_heatmap(self, pop: str = "val", label: int = 0, interpolation: str = "none", only_concerned_block: bool = False, normalize_time: bool = False, normalization: str = "block"):
         """Heatmap (time x network) of the mean |SHAP| projected on the 18 network templates.
 
-        Each block's SHAP map is L2-normalised (``normalization``: "block" over time and ROIs,
-        "timepoint" over the ROIs of each time point, see ``utils.network.normalize_shap``),
+        Each block's SHAP map is L2-normalised (``normalization``: "block" over the seconds 1-24
+        and the ROIs, "timepoint" over the ROIs of each second, see ``utils.network.normalize_shap``),
         then projected on the L2-normalised templates of
         ``external/schaeffer_subcortical_smith_templates.csv``.
         """
@@ -356,8 +357,11 @@ class Visualization:
         # Projection along the ROI axis (an earlier x_norm.reshape(-1, 481) on an array of shape
         # (..., 481, 3) mixed ROIs and conditions)
         x_network = network_projection(shap_vals, weights, normalization)   # (blocks, 25, 18, 3)
+        # |projection| first, then the optional min-max over time (it was applied to the signed
+        # values, so that a negative projection became a small value instead of a large one)
+        x_network = np.abs(x_network)
         x_network = ((x_network - x_network.min(axis=1, keepdims=True)) / (x_network.max(axis=1, keepdims=True) - x_network.min(axis=1, keepdims=True))) if normalize_time else x_network
-        x_network = np.abs(x_network[:, :, :, label]).mean(axis=0)
+        x_network = x_network[:, :, :, label].mean(axis=0)
         max_x = x_network.max()
 
         sort = np.argsort(x_network.mean(axis=0))

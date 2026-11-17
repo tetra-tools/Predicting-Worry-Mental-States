@@ -11,3 +11,6 @@
 Copyright (c) 2016 Computational Brain Imaging Group (CBIG), MIT License. Reference: Schaefer A,
 et al. Local-Global Parcellation of the Human Cerebral Cortex from Intrinsic Functional
 Connectivity MRI. Cereb Cortex 2018;28:3095-3114.
+
+- `network_colors.csv`: label and colour of each of the 18 networks, shared by
+  `figure_networks_top9.png` (R/Article.Rmd) and the brain maps of `tools/render_network_maps.py`.
