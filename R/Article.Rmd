@@ -588,7 +588,9 @@ for (label in names(shap_groups)){
     arrange(desc(mean_rank), network, id1, id2, timepoint) %>%
     mutate(
       network = fct_inorder(network),
-      network_group = paste0('Group ', ntile(row_number(), 6))
+      # 3 networks per group in the order of their mean rank (ntile(row_number(), 6) split a
+      # network over two groups whenever the networks had different numbers of rows)
+      network_group = paste0('Group ', ceiling(as.integer(network) / 3))
     )
   
   col_vec <- setNames(unique(plot_data$network_color), unique(plot_data$network))
@@ -604,6 +606,87 @@ for (label in names(shap_groups)){
     ggsave(paste0("plots/shap_", label, "_group", grp, ".png"), p, width = 8, height = 6)
   }
 }
+```
+
+```{r shap_networks_top9, fig.height=11, fig.width=14}
+# Top 9 networks of each condition (rows: Worry, Neutral, Reappraisal), by their mean rank
+# (shap_rank) over participants and seconds 1-24, in three columns (ranks 1-3, 4-6, 7-9).
+# Curves: amount (shap_value), mean and 95 % CI across participants (blocks of a participant
+# averaged first). Same axes in every panel. The highest point of each mean curve is marked in
+# the colour of its network, with its second. Colours: external/network_colors.csv, shared with
+# the brain maps of tools/render_network_maps.py.
+network_colors <- read_csv("../external/network_colors.csv", show_col_types = FALSE)
+col_of <- setNames(network_colors$color, network_colors$label)
+label_of <- setNames(network_colors$label, network_colors$network)
+conditions <- c(worry = "Worry", neutral = "Neutral", reappraisal = "Reappraisal")
+
+top9 <- bind_rows(lapply(names(conditions), function(label) {
+  d <- participant_means(prepare_shap_network_data(df_block_withshap, label, ids = 1:18)) %>%
+    mutate(network = str_replace(network, "^_", ""))
+  ranks <- d %>%
+    group_by(network) %>%
+    summarise(mean_rank = mean(shap_rank, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(mean_rank)) %>%
+    mutate(rank = row_number()) %>%
+    filter(rank <= 9)
+  d %>% inner_join(ranks, by = "network") %>% mutate(Condition = conditions[[label]])
+}))
+unknown <- setdiff(unique(top9$network), names(label_of))
+if (length(unknown) > 0) stop("Networks without a colour in external/network_colors.csv: ", paste(unknown, collapse = ", "))
+
+curves <- top9 %>%
+  group_by(Condition, network, rank, mean_rank, timepoint) %>%
+  summarise(n = sum(!is.na(shap_value)),
+            m = mean(shap_value, na.rm = TRUE),
+            h = qt(0.975, pmax(n - 1, 1)) * sd(shap_value, na.rm = TRUE) / sqrt(n),
+            .groups = "drop") %>%
+  mutate(Network = factor(label_of[network], levels = network_colors$label),
+         Condition = factor(Condition, levels = conditions),
+         first = 3 * ((rank - 1) %/% 3) + 1,
+         Ranks = factor(paste0("Ranks ", first, "-", first + 2), levels = c("Ranks 1-3", "Ranks 4-6", "Ranks 7-9")))
+peaks <- curves %>%
+  group_by(Condition, Network) %>%
+  slice_max(m, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(peak_label = paste0(timepoint, " s"), slot = (rank - 1) %% 3)   # slot: position in its panel
+
+# Peak labels: ggrepel keeps them apart when it is installed; otherwise they are staggered
+# vertically by the position of the network in its panel
+peak_labels <- if (requireNamespace("ggrepel", quietly = TRUE)) {
+  ggrepel::geom_text_repel(data = peaks, aes(label = peak_label), size = 3.2, fontface = "bold",
+                           nudge_y = 0.04 * diff(range(c(curves$m - curves$h, curves$m + curves$h), na.rm = TRUE)),
+                           direction = "both", min.segment.length = 0, segment.size = 0.3,
+                           seed = 1, show.legend = FALSE)
+} else {
+  geom_text(data = peaks, aes(label = peak_label, vjust = -1.1 - 1.3 * slot), size = 3.2,
+            fontface = "bold", show.legend = FALSE)
+}
+
+g <- ggplot(curves, aes(timepoint, m, colour = Network, fill = Network)) +
+  geom_ribbon(aes(ymin = m - h, ymax = m + h), alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 0.8) +
+  geom_point(data = peaks, shape = 21, size = 3.4, colour = "white", stroke = 0.9) +
+  peak_labels +
+  facet_grid(Condition ~ Ranks) +
+  scale_colour_manual(values = col_of, drop = TRUE) +
+  scale_fill_manual(values = col_of, drop = TRUE) +
+  scale_x_continuous(breaks = seq(0, 24, 4), limits = c(1, 24)) +
+  scale_y_continuous(expand = expansion(mult = c(0.02, 0.15))) +
+  labs(x = "Time (s) task synchronized", y = "Network SHAP (block-normalised)",
+       colour = "Networks", fill = "Networks") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom", legend.title = element_text(face = "bold"),
+        strip.text = element_text(face = "bold", size = 12), panel.grid.minor = element_blank()) +
+  guides(colour = guide_legend(ncol = 4, byrow = TRUE), fill = guide_legend(ncol = 4, byrow = TRUE))
+ggsave("plots/figure_networks_top9.png", plot = g, width = 14, height = 11, dpi = 300)
+g
+
+# Table of the figure: rank, mean rank and peak (second, value) of each network in each condition
+peaks %>%
+  transmute(Condition, rank, network, label = as.character(Network), mean_rank = round(mean_rank, 4),
+            peak_second = timepoint, peak_value = signif(m, 4)) %>%
+  arrange(Condition, rank) %>%
+  write_csv("plots/networks_top9.csv")
 ```
 
 ```{r eval=FALSE}

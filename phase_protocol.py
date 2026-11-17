@@ -60,6 +60,7 @@ REPO = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, REPO)
 from config import CHECKPOINT, PREDICTIONS_DIR, SHAP_DIR  # noqa: E402
 from utils.network import load_templates  # noqa: E402
+from utils.shap_io import load_shap  # noqa: E402
 
 CONDITIONS = ["Worry", "Neutral", "Reappraisal"]
 POPULATION_LABELS = {"train": "FINA: training set", "val": "FINA: test set", "test": "RAW: external validation set"}
@@ -222,16 +223,17 @@ def compute_block_values(args):
     windows = {**WINDOWS, **EXPLORATORY_WINDOWS}
     rows, curves = [], []
     for f in shap_files(args.pop, args.shap_dir):
-        npz = np.load(f)
-        shap = npz["shap"].reshape(-1, T, 481, 3)
-        keys = block_keys(npz["id1"], npz["id2"])
+        shap, sid1, sid2 = load_shap(f)                                      # axis order checked
+        keys = block_keys(sid1, sid2)
         missing = [k for k in keys if k not in position]
         if missing:
             sys.exit(f"{len(missing)} SHAP blocks have no input (e.g. {missing[:3]})")
         idx = np.array([position[k] for k in keys])
         cond = labels[idx].sum(axis=1).argmax(axis=-1)                       # condition of each block
         phi = shap[np.arange(len(idx)), :, :, cond].astype(np.float64)         # head = own condition
-        phi = phi / np.sqrt((phi ** 2).sum(axis=(1, 2), keepdims=True))       # block normalisation
+        # block normalisation over the seconds analysed (1-24): the last second is left out of
+        # the norm as of every measure (enrichment and direction are ratios: unaffected)
+        phi = phi / np.sqrt((phi[:, :LAST_SECOND - 1] ** 2).sum(axis=(1, 2), keepdims=True))
         a = np.abs(phi)
         sign = np.sign(data[idx] - x_bg)
         amount = a @ Wset.T                                                    # (blocks, 25, sets)

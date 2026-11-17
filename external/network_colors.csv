@@ -1,0 +1,19 @@
+network,label,color
+AnteriorHippocampus,Anterior Hippocampus,#9A6324
+anteriorDMN,Anterior Default Mode Network,#E6194B
+ASN,Anterior Salience Network,#F58231
+Auditory,Auditory Cortex,#D4A017
+BasalGanglia,Basal Ganglia,#808000
+BilateralInsula,Bilateral Insula,#3CB44B
+Cerebellum,Cerebellum,#469990
+DAN,Dorsal Attention Network,#4363D8
+FrontoLimbic,Frontolimbic Network,#911EB4
+Fusiform,Fusiform Gyrus,#F032E6
+left_ECN,Left Executive Control Network,#42D4F4
+Motor,Motor Cortex,#000075
+PrimaryVisual,Primary Visual Cortex,#800000
+posteriorDMN,Posterior Default Mode Network,#FF6F91
+right_ECN,Right Executive Control Network,#7570B3
+SecondaryVisual,Secondary Visual Cortex,#BCBD22
+SMA,Supplementary Motor Network,#00A86B
+ventralDMN,Ventral Default Mode Network,#B15928

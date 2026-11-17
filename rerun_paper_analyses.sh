@@ -30,6 +30,11 @@ done
 n_shap=$(count "$SHAP_DIR"/shap-lstmv4vf_pop-*_batch-*.npz)
 [ "$n_shap" -eq 38 ] || { echo "Expected 38 SHAP files in $SHAP_DIR, found $n_shap"; exit 1; }
 echo "checkpoint, common_file.csv, clinical files and 38 SHAP files found"
+# Axis order of the SHAP files (shap < 0.45 stored the conditions first; utils/shap_io.py reorders them)
+python -c "import sys; sys.path.insert(0, '.'); from utils.shap_io import layout; print('SHAP layout:', layout(sys.argv[1]))" \
+  "$SHAP_DIR/shap-lstmv4vf_pop-test_batch-0.npz"
+# ROI order of the time series vs the templates (needs the time series under WORRY_DATA_ROOT)
+python tools/check_roi_order.py || echo "WARNING: check the ROI order above before reading the network results"
 
 # Predictions: never recomputed here (without the original window caches, the windows and the
 # train/val split would differ from the paper)

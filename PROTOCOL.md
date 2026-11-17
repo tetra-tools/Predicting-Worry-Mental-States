@@ -39,7 +39,7 @@ second), so it carries a large attribution by construction.
 
 | Measure | Definition | Question |
 |---|---|---|
-| amount | block-normalised \|SHAP\| averaged over the set | share of the block's attribution (compositional) |
+| amount | block-normalised \|SHAP\| (L2 norm over seconds 1-24 and the 481 ROIs) averaged over the set | share of the block's attribution (compositional) |
 | **enrichment** | amount / median \|SHAP\| of the 481 ROIs at the same second | does the model use this set more than a typical ROI? |
 | **direction** | Σ\|SHAP\|·sign(input − mean training block) / Σ\|SHAP\| | does the attribution come from activity above (+1) or below (−1) the average block? |
 | **bold** | input z-scored per participant and ROI, minus the baseline window | activation vs the preceding fixation (2017: task vs rest) |
