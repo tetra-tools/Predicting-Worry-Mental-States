@@ -175,7 +175,8 @@ Network attributions ([`utils/network.py`](utils/network.py)):
 - **SHAP files.** `utils/shap_io.py` reads them with a checked axis order: shap < 0.45
   returned one array per condition, which `np.savez` stores as (3, blocks, 25, 481), and the
   former `reshape(-1, 25, 481, 3)` silently mixed conditions, blocks, seconds and ROIs on that
-  layout. Any other shape stops the reading.
+  layout. Any other shape stops the reading. `tools/inspect_shap_files.py` lists the date,
+  layout, blocks and participants of every file (history of the two SHAP runs in its docstring).
 - **ROI order.** The SHAP value of ROI *i* is the attribution of column *i* of the time
   series, weighted by column *i* of the templates: `python tools/check_roi_order.py` checks that
   the time-series files list the same 481 ROIs in the same order as the templates.
@@ -305,6 +306,7 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
 ├── tools/render_network_maps.py  network templates drawn on the cortex and the cerebellum (nilearn)
 ├── tools/check_roi_order.py  are the time-series ROIs in the order of the templates
+├── tools/inspect_shap_files.py  provenance of the 38 SHAP files (dates, layout, blocks, participants)
 ├── utils/                   NaN check, network projection (network.py), SHAP file reading (shap_io.py)
 └── external/                network templates
 ```
