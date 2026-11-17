@@ -15,6 +15,7 @@ tqdm>=4.62
 
 # Attribution analysis
 shap>=0.46              # returns arrays of shape (n, time, roi, condition), as expected by visualization/base.py
+captum>=0.7             # deterministic expected gradients (tools/expected_gradients_all_baselines.py)
 
 # Figures
 matplotlib>=3.5

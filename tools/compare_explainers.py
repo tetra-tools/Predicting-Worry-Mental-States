@@ -126,13 +126,16 @@ def main():
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--out", default=os.path.join(REPO, "results", "gradient_explainer"))
     parser.add_argument("--summarize", default=None, metavar="FOLDER", help="only summarise the batches of FOLDER")
+    parser.add_argument("--other_dir", default=None, metavar="FOLDER",
+                        help="compare DeepExplainer with the attributions already in FOLDER (same file names as "
+                             "main_shap.py, e.g. tools/expected_gradients_all_baselines.py --merge) instead of "
+                             "computing GradientExplainer; --nsamples, --convergence and --repeats are ignored")
+    parser.add_argument("--other_name", default="ExpectedGradients all baselines", help="label of --other_dir")
     args = parser.parse_args()
     if args.summarize:
         return summarize(args.summarize)
 
-    import shap as shap_lib
     import torch
-    from models.lstm_v4 import LSTMClassifier
 
     threads = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1))
     torch.set_num_threads(threads)
@@ -165,6 +168,35 @@ def main():
             else rng.choice(len(train_data), args.background, replace=False))
     background = torch.as_tensor(train_data[keep])
     expected = train_pred[keep, -1, :].mean(axis=0)                       # mean output on the background
+    weights = load_templates(TEMPLATES)[2]
+
+    if args.other_dir:                                                    # precomputed attributions
+        other_path = os.path.join(args.other_dir, f"shap-lstmv4vf_pop-{args.pop}_batch-{args.batch_idx}.npz")
+        if not os.path.exists(other_path):
+            sys.exit(f"Not found: {other_path}")
+        zo = np.load(other_path)
+        if not (np.array_equal(np.asarray(zo["id1"]).ravel().astype(str), sid1.astype(str))
+                and np.array_equal(np.asarray(zo["id2"]).ravel().astype(str), sid2.astype(str))):
+            sys.exit(f"{other_path}: blocks not in the order of the DeepExplainer file")
+        other = zo["shap"].reshape(-1, 25, 481, 3).astype(np.float64)
+        rows = []
+        for name, values in (("DeepExplainer", deep), (args.other_name, other)):
+            r, slope = additivity(values, f, expected, true_class)
+            rows.append({"comparison": f"additivity {name}", "additivity_r": r, "additivity_slope": slope})
+        rows.append({"comparison": f"DeepExplainer vs {args.other_name}", **compare(deep, other, true_class, weights)})
+        table = pd.DataFrame(rows)
+        table.insert(0, "n_blocks", len(x))
+        table.insert(0, "batch", args.batch_idx)
+        table.insert(0, "pop", args.pop)
+        out_csv = os.path.join(args.out, f"compare_pop-{args.pop}_batch-{args.batch_idx}.csv")
+        table.to_csv(out_csv, index=False)
+        with pd.option_context("display.width", 250, "display.precision", 3, "display.max_columns", 30):
+            print(table.drop(columns=["pop", "batch", "n_blocks"]).set_index("comparison").T)
+        print(f"Written: {out_csv}")
+        return
+
+    import shap as shap_lib
+    from models.lstm_v4 import LSTMClassifier
 
     model = LSTMClassifier.load_from_checkpoint(args.checkpoint, map_location="cpu")
     model.eval()
@@ -189,7 +221,6 @@ def main():
     np.savez_compressed(os.path.join(args.out, f"shap-lstmv4vf_pop-{args.pop}_batch-{args.batch_idx}.npz"),
                         shap=grad.astype(np.float32), id1=sid1, id2=sid2)
 
-    weights = load_templates(TEMPLATES)[2]
     rows = []
     for name, values in (("DeepExplainer", deep), (f"GradientExplainer n={args.nsamples}", grad)):
         r, slope = additivity(values, f, expected, true_class)

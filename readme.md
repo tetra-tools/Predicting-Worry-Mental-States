@@ -271,7 +271,8 @@ projected along the ROI axis) and `R/Article.Rmd` writes the figures to `R/plots
 ├── tools/check_network_projection.py  which projection produced the network columns of an export
 ├── phase_protocol.py        pre-specified phase protocol (PROTOCOL.md): second-phase contrast, direction
 ├── tools/check_shap_additivity.py   do the SHAP values add up to the predictions (no cache needed)
-├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer, one SHAP batch per run
+├── tools/compare_explainers.py     DeepExplainer vs GradientExplainer (or precomputed attributions, --other_dir)
+├── tools/expected_gradients_all_baselines.py  deterministic expected gradients (Captum): all training blocks, fixed grid
 ├── tools/make_network_maps.py  network templates as brain maps for BrainNet Viewer (Figure 4)
 ├── utils/                   NaN check, network projection of the SHAP values (network.py)
 └── external/                network templates
@@ -312,6 +313,14 @@ onset), the whole run, and the random 20 s training windows.
   `tools/check_shap_additivity.py` can be rerun on them with `--shap_dir`. Run it as a SLURM
   array, one batch per task (30 RAW + 8 FINA batches), then
   `python tools/compare_explainers.py --summarize <out>`.
+- `tools/expected_gradients_all_baselines.py` removes the remaining randomness of expected
+  gradients: every training block is used once as baseline and the integral over t is computed
+  on a fixed grid (Captum `IntegratedGradients`, midpoint rule, 64 points by default), so the
+  attributions are identical at every run and add up to the predictions up to the quadrature
+  error. The work is split by SHAP batch and baseline chunk (SLURM array), then merged
+  (`--merge`) into files named as `main_shap.py`; `compare_explainers.py --other_dir`,
+  `check_shap_additivity.py --shap_dir` and `phase_protocol.py --shap_dir` run on them.
+  Needs `captum` (with torch >= 2.3).
 - The last second of the block window (25 s) is left out of the SHAP figures, models and
   protocol: it is the input of the explained output and is large by construction.
 - The order of the networks partly depends on the spatial extent of their templates: on a
