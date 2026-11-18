@@ -98,12 +98,14 @@ safe_auc <- function(response, predictor, quiet = TRUE) {
 
 # Function to find local maxima with constraints
 find_local_maxima <- function(x, y, n_max = 3, min_distance = 5) {
-  if(length(y) < 3) return(data.frame())
+  none <- data.frame(timepoint = numeric(0), shap_value = numeric(0))
+  if(length(y) < 3) return(none)
   
+  # interior local maxima only: the last point of the curve is not a peak (it was appended here
+  # before, which put a star at the end of every curve of the timing figure)
   peaks <- which(diff(sign(diff(y))) == -2) + 1
-  peaks <- c(peaks, length(y))
   
-  if(length(peaks) == 0) return(data.frame())
+  if(length(peaks) == 0) return(none)
   
   peak_values <- y[peaks]
   sorted_peaks <- peaks[order(peak_values, decreasing = TRUE)]
@@ -370,15 +372,16 @@ maxima_data <- mean_data %>%
   do(find_local_maxima(.$timepoint, .$mean_shap, 3, 5)) %>%
   ungroup()
 
-ggline(tmp, x = "timepoint", y = "shap_value", color = "Condition", add = "mean_ci", 
+p_timing <- ggline(tmp, x = "timepoint", y = "shap_value", color = "Condition", add = "mean_ci", 
        facet.by = "Population", numeric.x.axis = TRUE, palette = "lancet") + 
   geom_point(data = maxima_data, aes(x = timepoint, y = shap_value + 0.005, color = Condition), 
              shape = 8, size = 3) +
   xlab("Time (s) task synchronized") +
   ylab("smaShap") +
   theme(axis.text.x = element_text(angle = 45, hjust=1, size = 6))
+p_timing
 
-ggsave("plots/figure_timing.png", width = 8, height = 5, dpi = 300)
+ggsave("plots/figure_timing.png", plot = p_timing, width = 8, height = 5, dpi = 300)
 ```
 
 ```{r auc_analysis, fig.height=10, fig.width=15}
