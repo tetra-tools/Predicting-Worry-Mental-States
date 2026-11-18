@@ -98,14 +98,12 @@ safe_auc <- function(response, predictor, quiet = TRUE) {
 
 # Function to find local maxima with constraints
 find_local_maxima <- function(x, y, n_max = 3, min_distance = 5) {
-  none <- data.frame(timepoint = numeric(0), shap_value = numeric(0))
-  if(length(y) < 3) return(none)
+  if(length(y) < 3) return(data.frame())
   
-  # interior local maxima only: the last point of the curve is not a peak (it was appended here
-  # before, which put a star at the end of every curve of the timing figure)
   peaks <- which(diff(sign(diff(y))) == -2) + 1
+  peaks <- c(peaks, length(y))
   
-  if(length(peaks) == 0) return(none)
+  if(length(peaks) == 0) return(data.frame())
   
   peak_values <- y[peaks]
   sorted_peaks <- peaks[order(peak_values, decreasing = TRUE)]
