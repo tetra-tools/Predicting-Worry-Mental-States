@@ -264,9 +264,10 @@ mae_data <- df %>%
   )
 
 # Run mixed effects model
-# Enrollment: "RAW only" (common_id NA) vs "FINA and RAW" (reference: participants of RAW also
-# enrolled in FINA). Same coding as the former common_id = is.na(common_id) (TRUE = RAW only):
-# same estimate, sign and p value, only the term name changes (EnrollmentRAW only).
+# Enrollment: "RAW only" (common_id NA) vs "FINA and RAW" (reference: participants of RAW listed
+# in common_file.csv as also enrolled in FINA, 22 of 88, whatever the FINA set of their FINA
+# session; see the chunk mae_model_fina_set). Same coding as the former common_id =
+# is.na(common_id) (TRUE = RAW only): same estimate, sign and p value, only the term name changes.
 mae_data$Enrollment <- factor(ifelse(is.na(mae_data$common_id), "RAW only", "FINA and RAW"),
                               levels = c("FINA and RAW", "RAW only"))
 model_formula <- mae ~ Age + Sex + PSWQ + RSQ + Rating + Rating*Class + RSQ*Class + HARS*Class + 
@@ -286,6 +287,41 @@ g <- ggcoefstats(model, effects = "fixed", digits="signif3", exclude.intercept=T
 # wide enough for the term labels and the caption of ggcoefstats (cropped at width = 4)
 ggsave("plots/figure_model_mae.png", plot = g, width = 8, height = 12, dpi = 300)
 g
+```
+
+```{r mae_model_fina_set, fig.height=14, fig.width=6}
+# Same model with the FINA set of the RAW participant's FINA session in place of Enrollment:
+#   "FINA: training set"  FINA session used to train the model (another session of the same person)
+#   "FINA: test set"      FINA session in the FINA test set (never used for training)
+#   "Not in FINA data"    reference: no FINA session among the exports (RAW only, or listed in
+#                         common_file.csv with a FINA session left out of the data)
+# In the FINA exports, common_id is the RAW identifier of the participant.
+fina_set_of_raw <- df %>%
+  filter(split %in% c("train", "val"), !is.na(common_id)) %>%
+  distinct(raw_id = common_id, split)
+raw_seen_in_training <- fina_set_of_raw$raw_id[fina_set_of_raw$split == "train"]
+raw_in_fina_test <- setdiff(fina_set_of_raw$raw_id[fina_set_of_raw$split == "val"], raw_seen_in_training)
+
+mae_data$FINA_set <- factor(case_when(mae_data$id1 %in% raw_seen_in_training ~ "FINA: training set",
+                                      mae_data$id1 %in% raw_in_fina_test ~ "FINA: test set",
+                                      TRUE ~ "Not in FINA data"),
+                            levels = c("Not in FINA data", "FINA: training set", "FINA: test set"))
+print(mae_data %>% distinct(id1, Enrollment, FINA_set) %>% count(Enrollment, FINA_set))
+
+model_formula_fina_set <- update(model_formula, . ~ . - Enrollment + FINA_set)
+if (n_distinct(mae_data$FINA_set) < 2) {
+  message("FINA_set has a single level in these data: term left out of the model")
+  model_formula_fina_set <- update(model_formula_fina_set, . ~ . - FINA_set)
+}
+model_fina_set <- lmer(model_formula_fina_set, data = mae_data)
+
+summary(model_fina_set)
+anova(model_fina_set)
+g_fina_set <- ggcoefstats(model_fina_set, effects = "fixed", digits = "signif3", exclude.intercept = TRUE,
+                          sort = "ascending", only.significant = TRUE, xlab = "Estimate", ylab = "Terms") +
+  theme(plot.caption = element_text(size = 8, hjust = 0), plot.margin = margin(10, 20, 10, 10))
+ggsave("plots/figure_model_mae_fina_set.png", plot = g_fina_set, width = 8, height = 12, dpi = 300)
+g_fina_set
 ```
 
 ```{r mae_plots, fig.height=10, fig.width=15}
